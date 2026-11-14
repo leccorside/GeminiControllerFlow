@@ -11,6 +11,12 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — instalação definitiva
+- O Firefox da máquina é o **160.0, canal release**: ele ignora `xpinstall.signatures.required` e só instala de vez extensões assinadas pela Mozilla.
+- Criado `scripts/assinar-e-instalar.ps1` (UTF-8 com BOM, para os acentos saírem certos no PowerShell 5.1): lê `WEB_EXT_API_KEY`/`WEB_EXT_API_SECRET` ou pede no terminal (segredo como SecureString, sem gravar em arquivo), roda `web-ext sign --channel=unlisted`, abre o `.xpi` assinado no Firefox e apaga o segredo da sessão.
+- A conta e as chaves do addons.mozilla.org são do usuário: o Claude não cria contas nem digita credenciais, por isso a assinatura é executada pelo próprio usuário.
+- Cada nova assinatura exige subir a `version` do `manifest.json`.
+
 ### 14/11/2026 — repositório git
 - `git init` feito pelo usuário. O Git do Windows (`core.autocrlf=true`) avisava "LF will be replaced by CRLF" porque os arquivos são criados com LF.
 - Correção: `.gitattributes` com `* text=auto eol=lf` (mantém LF no repositório e na cópia de trabalho, sem aviso) e `.gitignore` ignorando `web-ext-artifacts/` (pacotes gerados), `node_modules/` e `.claude/`.

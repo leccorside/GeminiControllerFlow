@@ -15,9 +15,21 @@ Abre o Gemini na barra lateral do Firefox como assistente, com acesso à página
 2. Clique em **Carregar extensão temporária…** e escolha o arquivo `manifest.json` desta pasta.
 3. A barra lateral do Gemini abre sozinha. Também dá para abrir pelo ícone na barra de ferramentas ou com **Ctrl+Shift+Y**.
 
-A instalação temporária some ao fechar o Firefox. Para deixar fixa:
-- **Firefox Developer Edition / Nightly**: em `about:config`, defina `xpinstall.signatures.required = false` e instale o `.zip` gerado em `web-ext-artifacts/` (arraste para a janela ou use `about:addons` → engrenagem → *Instalar de arquivo*).
-- **Firefox normal**: é preciso assinar a extensão na Mozilla como "não listada" (`npx web-ext sign --channel=unlisted` com as chaves da sua conta do addons.mozilla.org).
+A instalação temporária some ao fechar o Firefox.
+
+## Instalar de forma definitiva (Firefox normal)
+
+O Firefox normal só instala de vez extensões assinadas pela Mozilla. A assinatura "não listada" é gratuita e automática (a extensão não aparece na loja):
+
+1. Entre (ou crie a conta) em [addons.mozilla.org](https://addons.mozilla.org) e gere as credenciais em [Gerenciar chaves de API](https://addons.mozilla.org/pt-BR/developers/addon/api/key/) — *Emissor JWT* e *Segredo JWT*.
+2. Na pasta do projeto, rode:
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\assinar-e-instalar.ps1
+   ```
+   O script pede as duas credenciais (não grava em arquivo), assina, gera o `.xpi` em `web-ext-artifacts/` e abre no Firefox. Confirme em **Adicionar**.
+3. Para publicar uma atualização, aumente `version` no `manifest.json` e rode o script de novo (a Mozilla não assina a mesma versão duas vezes).
+
+Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinstall.signatures.required = false` em `about:config`, instalando o `.zip` de `web-ext-artifacts/` em `about:addons` → engrenagem → *Instalar extensão de um arquivo*.
 
 ## Primeiro uso (modo conta Google)
 
