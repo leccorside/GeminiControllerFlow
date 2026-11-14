@@ -94,6 +94,7 @@ a { color: var(--accent-2); }
 .table-wrap { overflow-x: auto; margin: 6px 0; }
 .msg.model table { border-collapse: collapse; font-size: 12px; }
 .msg.model th, .msg.model td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; }
+.msg.note { color: var(--muted); font-size: 12px; text-align: center; }
 .msg.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); padding: 7px 10px; border-radius: 8px; }
 
 .steps { display: flex; flex-direction: column; gap: 2px; }

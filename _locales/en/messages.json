@@ -1,0 +1,11 @@
+{
+  "extensionDescription": {
+    "message": "Gemini assistant in the Firefox sidebar, with full reading of the open page and actions on it (click, type, scroll, navigate)."
+  },
+  "actionTitle": {
+    "message": "Open Gemini in the sidebar"
+  },
+  "commandDescription": {
+    "message": "Open/close Gemini in the sidebar"
+  }
+}

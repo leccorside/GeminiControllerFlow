@@ -3,6 +3,33 @@
 (() => {
   if (window.__geminiControllerFlow) return;
 
+  // Mensagens de erro no idioma escolhido na barra lateral (vem em cada mensagem).
+  let LANG = "pt-BR";
+  const MSG = {
+    "pt-BR": {
+      notFound: "Elemento [{ref}] não encontrado. A página pode ter mudado; chame get_page de novo.",
+      noElAt: "Nenhum elemento na coordenada ({x}, {y}).", refOrXY: "Informe ref ou x/y.",
+      fieldRef: "Informe o ref do campo.", notEditable: "O elemento não é um campo de texto editável.",
+      notSelect: "O elemento não é um <select>. Para menus customizados, clique na opção.",
+      noOption: "Opção \"{v}\" não encontrada.", unknown: "Comando desconhecido: {c}"
+    },
+    en: {
+      notFound: "Element [{ref}] not found. The page may have changed; call get_page again.",
+      noElAt: "No element at coordinate ({x}, {y}).", refOrXY: "Provide ref or x/y.",
+      fieldRef: "Provide the field ref.", notEditable: "The element is not an editable text field.",
+      notSelect: "The element is not a <select>. For custom menus, click the option.",
+      noOption: "Option \"{v}\" not found.", unknown: "Unknown command: {c}"
+    },
+    es: {
+      notFound: "Elemento [{ref}] no encontrado. La página puede haber cambiado; llama a get_page de nuevo.",
+      noElAt: "Ningún elemento en la coordenada ({x}, {y}).", refOrXY: "Indica ref o x/y.",
+      fieldRef: "Indica el ref del campo.", notEditable: "El elemento no es un campo de texto editable.",
+      notSelect: "El elemento no es un <select>. Para menús personalizados, haz clic en la opción.",
+      noOption: "Opción \"{v}\" no encontrada.", unknown: "Comando desconocido: {c}"
+    }
+  };
+  const tr = (k, vars = {}) => ((MSG[LANG] || MSG["pt-BR"])[k] || k).replace(/{(w+)}/g, (m, x) => (vars[x] != null ? vars[x] : m));
+
   const REF_ATTR = "data-gc-ref";
   const refs = new Map(); // ref -> Element
   let nextRef = 1;
@@ -89,7 +116,7 @@
       el = document.querySelector(`[${REF_ATTR}="${n}"]`);
       if (el) refs.set(n, el);
     }
-    if (!el) throw new Error(`Elemento [${ref}] não encontrado. A página pode ter mudado; chame get_page de novo.`);
+    if (!el) throw new Error(tr("notFound", { ref }));
     return el;
   }
 
@@ -216,10 +243,10 @@
       if (top && (el.contains(top))) el = top;
     } else if (x != null && y != null) {
       el = document.elementFromPoint(x, y);
-      if (!el) throw new Error(`Nenhum elemento na coordenada (${x}, ${y}).`);
+      if (!el) throw new Error(tr("noElAt", { x, y }));
       highlight(el);
     } else {
-      throw new Error("Informe ref ou x/y.");
+      throw new Error(tr("refOrXY"));
     }
     mouse(el, "pointerover", x, y); mouse(el, "mouseover", x, y);
     mouse(el, "pointerdown", x, y); mouse(el, "mousedown", x, y);
@@ -268,7 +295,7 @@
 
   function typeText({ ref, text = "", clear = true, submit = false }) {
     const el = ref != null ? getEl(ref) : document.activeElement;
-    if (!el || el === document.body) throw new Error("Informe o ref do campo.");
+    if (!el || el === document.body) throw new Error(tr("fieldRef"));
     prepare(el);
     el.focus();
     if (el.matches("input,textarea")) {
@@ -278,7 +305,7 @@
     } else {
       // contenteditable (editores como Lexical/Draft/ProseMirror) — usa execCommand para o editor perceber.
       const editable = el.isContentEditable ? el : el.querySelector("[contenteditable=true],[contenteditable='']");
-      if (!editable) throw new Error("O elemento não é um campo de texto editável.");
+      if (!editable) throw new Error(tr("notEditable"));
       editable.focus();
       if (clear) {
         const sel = getSelection();
@@ -307,12 +334,12 @@
   function selectOption({ ref, value }) {
     const el = getEl(ref);
     prepare(el);
-    if (el.tagName !== "SELECT") throw new Error("O elemento não é um <select>. Para menus customizados, clique na opção.");
+    if (el.tagName !== "SELECT") throw new Error(tr("notSelect"));
     const v = String(value).toLowerCase();
     const opt = [...el.options].find(o => o.value.toLowerCase() === v) ||
       [...el.options].find(o => o.text.trim().toLowerCase() === v) ||
       [...el.options].find(o => o.text.toLowerCase().includes(v));
-    if (!opt) throw new Error(`Opção "${value}" não encontrada.`);
+    if (!opt) throw new Error(tr("noOption", { v: value }));
     setNativeValue(el, opt.value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -382,8 +409,9 @@
   window.__geminiControllerFlow = true;
   browser.runtime.onMessage.addListener((msg) => {
     if (!msg || msg.__gc !== true) return undefined;
+    if (msg.lang) LANG = msg.lang;
     const fn = handlers[msg.cmd];
-    if (!fn) return Promise.resolve({ erro: `Comando desconhecido: ${msg.cmd}` });
+    if (!fn) return Promise.resolve({ erro: tr("unknown", { c: msg.cmd }) });
     try {
       return Promise.resolve(fn(msg.args || {}));
     } catch (e) {

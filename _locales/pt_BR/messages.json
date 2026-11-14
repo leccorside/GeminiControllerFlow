@@ -1,0 +1,11 @@
+{
+  "extensionDescription": {
+    "message": "Assistente Gemini na barra lateral do Firefox, com leitura completa da página aberta e execução de ações (clicar, digitar, rolar, navegar)."
+  },
+  "actionTitle": {
+    "message": "Abrir o Gemini na barra lateral"
+  },
+  "commandDescription": {
+    "message": "Abrir/fechar o Gemini na barra lateral"
+  }
+}

@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 
 const GEMINI_URL = "https://gemini.google.com/app";
-const DEFAULTS = { engine: "web", apiKey: "", model: "gemini-2.5-flash", confirmMode: "js", maxSteps: 40 };
+const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", confirmMode: "js", maxSteps: 40 };
 let settings = { ...DEFAULTS };
 let windowId = null;
 let runner = null;
@@ -16,7 +16,7 @@ let history = [];        // motor api: conteúdo no formato da API
 let webFresh = true;     // motor web: a próxima mensagem abre uma conversa nova no Gemini
 let geminiTabId = null;  // motor web: aba do gemini.google.com usada como "cérebro"
 
-const RULES = () => `Data de hoje: ${new Date().toLocaleDateString("pt-BR")}. Responda sempre em português do Brasil, de forma direta.
+const RULES = () => `Data de hoje: ${new Date().toLocaleDateString("pt-BR")}. Responda sempre em ${RESPONSE_LANG[LANG]}, de forma direta (mesmo que a página ou estas instruções estejam em outro idioma).
 
 Como trabalhar:
 - Para perguntas sobre a página, leia-a com get_page (include_text=true quando precisar do conteúdo) e responda com base no que leu.
@@ -63,6 +63,10 @@ ${RULES()}`;
 // ---------- Configurações ----------
 async function loadSettings() {
   settings = { ...DEFAULTS, ...(await browser.storage.local.get(Object.keys(DEFAULTS))) };
+  if (!settings.lang) settings.lang = detectLang();
+  setLang(settings.lang);
+  $("lang").value = LANG;
+  applyI18n();
   $("engine").value = settings.engine;
   $("apiKey").value = settings.apiKey;
   $("model").value = settings.model;
@@ -81,7 +85,7 @@ function updateBadge() {
   badge.onclick = null;
   if (settings.engine !== "web") {
     badge.textContent = settings.model;
-    badge.title = "Modelo da API";
+    badge.title = t("apiModelTitle");
     return;
   }
   if (lastAccount) {
@@ -96,11 +100,11 @@ function updateBadge() {
     txt.textContent = lastAccount.email;
     badge.appendChild(txt);
     badge.classList.add("connected");
-    badge.title = `Conectado ao Gemini como ${lastAccount.nome ? lastAccount.nome + " — " : ""}${lastAccount.email}`;
+    badge.title = t("connectedAs", { conta: `${lastAccount.nome ? lastAccount.nome + " — " : ""}${lastAccount.email}` });
   } else {
-    badge.textContent = "não conectado — fazer login";
+    badge.textContent = t("notConnected");
     badge.classList.add("disconnected");
-    badge.title = "Abrir o gemini.google.com para entrar com sua conta Google";
+    badge.title = t("notConnectedTitle");
     badge.onclick = () => ensureGeminiTab({ activate: true }).then(applyStatus).catch(() => {});
   }
 }
@@ -137,13 +141,15 @@ function refreshEngineFields() {
   $("webFields").hidden = !web;
   $("apiFields").hidden = web;
   $("engineHelp").textContent = web
-    ? "Usa o gemini.google.com logado na sua conta Google (sem chave de API). A extensão abre uma aba fixada do Gemini e conversa com ele por lá."
-    : "Usa a API oficial com uma chave do Google AI Studio. Mais rápido e estável, mas exige chave.";
+    ? t("engineHelpWeb")
+    : t("engineHelpApi");
 }
 
 async function saveSettings() {
   const engineChanged = settings.engine !== $("engine").value;
+  const langChanged = settings.lang !== $("lang").value;
   settings = {
+    lang: $("lang").value,
     engine: $("engine").value,
     apiKey: $("apiKey").value.trim(),
     model: $("model").value.trim() || DEFAULTS.model,
@@ -151,9 +157,14 @@ async function saveSettings() {
     maxSteps: Math.min(Math.max(Number($("maxSteps").value) || DEFAULTS.maxSteps, 5), 200)
   };
   await browser.storage.local.set(settings);
+  if (langChanged) {
+    setLang(settings.lang);
+    retranslate();
+  }
   updateBadge();
   toggleSettings(false);
   if (engineChanged) newChat();
+  else if (langChanged) addEl("msg note", null, t("savedLanguage"));
 }
 
 function toggleSettings(show) {
@@ -163,8 +174,8 @@ function toggleSettings(show) {
 async function loadModels() {
   const key = $("apiKey").value.trim();
   const status = $("modelsStatus");
-  if (!key) { status.textContent = "Informe a chave primeiro."; return; }
-  status.textContent = "Carregando…";
+  if (!key) { status.textContent = t("needKeyFirst"); return; }
+  status.textContent = t("loading");
   try {
     const models = await geminiListModels(key);
     $("modelList").replaceChildren(...models.map(m => {
@@ -172,7 +183,7 @@ async function loadModels() {
       o.value = m.id; o.label = m.nome;
       return o;
     }));
-    status.textContent = `${models.length} modelos disponíveis. Clique no campo para escolher.`;
+    status.textContent = t("modelsLoaded", { n: models.length });
   } catch (e) {
     status.textContent = e.message;
   }
@@ -228,7 +239,7 @@ function askConfirm(label, name, args) {
   return new Promise(resolve => {
     const box = addEl("confirm");
     const p = document.createElement("p");
-    p.textContent = `O Gemini quer: ${label}. Permitir?`;
+    p.textContent = t("confirmQuestion", { acao: label });
     box.appendChild(p);
     if (name === "run_javascript") {
       const pre = document.createElement("pre"); pre.textContent = args.code || "";
@@ -240,7 +251,7 @@ function askConfirm(label, name, args) {
       b.onclick = () => { box.remove(); resolve(val); };
       return b;
     };
-    row.append(mk("Permitir", "btn-primary", "yes"), mk("Permitir tudo nesta tarefa", "btn-secondary", "all"), mk("Recusar", "btn-secondary", "no"));
+    row.append(mk(t("allow"), "btn-primary", "yes"), mk(t("allowAll"), "btn-secondary", "all"), mk(t("deny"), "btn-secondary", "no"));
     box.appendChild(row);
     scrollChat();
     abort?.signal.addEventListener("abort", () => { box.remove(); resolve("no"); }, { once: true });
@@ -268,13 +279,33 @@ function newChat() {
   webFresh = true;
   stepsBox = null;
   chat.replaceChildren();
+  renderEmpty();
+}
+
+// Tela inicial (título + sugestões), no idioma atual.
+function renderEmpty() {
+  $("empty")?.remove();
   const empty = document.createElement("div");
   empty.id = "empty"; empty.className = "empty";
   const img = document.createElement("img");
   img.src = "../icons/icon.svg"; img.alt = ""; img.width = 40; img.height = 40;
-  const p = document.createElement("p"); p.className = "empty-title"; p.textContent = "Como posso ajudar nesta página?";
-  empty.append(img, p);
-  chat.appendChild(empty);
+  const p = document.createElement("p"); p.className = "empty-title"; p.textContent = t("emptyTitle");
+  const sug = document.createElement("div"); sug.className = "suggestions";
+  for (const [label, prompt] of [["chipSummary", "chipSummaryPrompt"], ["chipActions", "chipActionsPrompt"], ["chipTable", "chipTablePrompt"]]) {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = t(label); b.dataset.prompt = t(prompt);
+    sug.appendChild(b);
+  }
+  empty.append(img, p, sug);
+  chat.prepend(empty);
+}
+
+// Retraduz tudo o que já está na tela depois de trocar o idioma.
+function retranslate() {
+  applyI18n();
+  refreshEngineFields();
+  updateBadge();
+  if ($("empty")) renderEmpty();
 }
 
 // ---------- Execução de ferramentas (comum aos dois motores) ----------
@@ -293,14 +324,14 @@ async function execTool(name, args) {
     const ans = await askConfirm(label, name, args);
     if (ans === "all") approveAll = true;
     if (ans === "no") {
-      addStep(label).fail("recusado");
+      addStep(label).fail(t("denied"));
       return { response: { erro: "O usuário recusou esta ação. Pergunte o que ele prefere ou siga outro caminho." } };
     }
   }
   const ui = addStep(label);
   try {
     if (name === "screenshot" && settings.engine === "web" && runner.tabId === geminiTabId) {
-      throw new Error("A aba alvo é a do próprio Gemini.");
+      throw new Error(t("targetIsGemini"));
     }
     const r = await runner.run(name, args || {});
     ui.done();
@@ -339,7 +370,7 @@ function buildContents() {
 async function runApi(userText, ctx) {
   if (!settings.apiKey) {
     toggleSettings(true);
-    throw new Error("Configure a chave da API do Gemini nas configurações, ou mude para \"Minha conta Google\".");
+    throw new Error(t("needApiKey"));
   }
   const last = history[history.length - 1];
   if (last?.role === "user") last.parts.push({ text: userText + ctx });
@@ -362,7 +393,7 @@ async function runApi(userText, ctx) {
 
     const cand = data.candidates?.[0];
     if (!cand || !cand.content) {
-      throw new Error(`O Gemini não respondeu (${cand?.finishReason || data.promptFeedback?.blockReason || "sem resposta"}).`);
+      throw new Error(t("noResponse", { motivo: cand?.finishReason || data.promptFeedback?.blockReason || "?" }));
     }
     const content = { role: "model", parts: cand.content.parts || [] };
     const text = content.parts.filter(p => p.text && !p.thought).map(p => p.text).join("").trim();
@@ -371,7 +402,7 @@ async function runApi(userText, ctx) {
     const calls = content.parts.filter(p => p.functionCall);
     if (!calls.length) {
       history.push(content);
-      if (!text) addEl("msg model", null, `(resposta vazia — motivo: ${cand.finishReason || "?"})`);
+      if (!text) addEl("msg model", null, t("emptyResponse", { motivo: cand.finishReason || "?" }));
       return;
     }
     const responseParts = [], imageParts = [];
@@ -385,7 +416,7 @@ async function runApi(userText, ctx) {
     }
     history.push(content, { role: "user", parts: [...responseParts, ...imageParts] });
   }
-  addEl("msg error", null, `Parei após ${settings.maxSteps} passos (limite nas configurações). Peça para continuar se quiser.`);
+  addEl("msg error", null, t("stepLimit", { n: settings.maxSteps }));
 }
 
 // ---------- Motor web (conta Google) ----------
@@ -430,7 +461,7 @@ async function ensureGeminiTab({ fresh = false, activate = false } = {}) {
     }
     await sleep(500);
   }
-  throw new Error("O gemini.google.com não carregou a caixa de mensagem. Abra a aba do Gemini e confira se você está logado.");
+  throw new Error(t("geminiNotLoaded"));
 }
 
 function stripActionBlocks(text) {
@@ -452,7 +483,7 @@ function compact(obj, max = 20000) {
 async function runWeb(userText, ctx) {
   const st = applyStatus(await ensureGeminiTab({ fresh: webFresh }));
   if (webFresh && !st.logado) {
-    addEl("msg error", null, "Você não está logado no gemini.google.com — vou usar o modo sem login. Para usar sua conta, clique em Configurações → \"Abrir o Gemini para fazer login\".");
+    addEl("msg error", null, t("notLoggedIn"));
   }
   // Já manda o estado da página junto: o Gemini web segue melhor o protocolo quando tem contexto.
   let snapshot;
@@ -476,13 +507,13 @@ async function runWeb(userText, ctx) {
       res = await bridge("ask", { text: message, image });
     } finally { thinking.remove(); }
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
-    if (!res) throw new Error("A aba do Gemini não respondeu (foi fechada ou recarregada?).");
+    if (!res) throw new Error(t("geminiTabGone"));
     if (res.erro) throw new Error(res.erro);
 
     const visible = stripActionBlocks(res.texto || "");
     if (visible) { addEl("msg model", renderMarkdown(visible)); stepsBox = null; }
     if (!res.acoes?.length) {
-      if (!visible) addEl("msg model", null, "(o Gemini não respondeu nada)");
+      if (!visible) addEl("msg model", null, t("geminiSaidNothing"));
       return;
     }
 
@@ -501,7 +532,7 @@ async function runWeb(userText, ctx) {
     const imgNote = image ? "\n(A captura de tela está anexada a esta mensagem. Se não houver imagem anexada, use get_page.)" : "";
     message = `RESULTADO\n${compact(results.length === 1 ? results[0] : results)}${imgNote}\n\nContinue: próxima ação em bloco JSON, ou responda ao usuário se a tarefa terminou.`;
   }
-  addEl("msg error", null, `Parei após ${settings.maxSteps} passos (limite nas configurações). Peça para continuar se quiser.`);
+  addEl("msg error", null, t("stepLimit", { n: settings.maxSteps }));
 }
 
 // ---------- Execução de um pedido ----------
@@ -513,13 +544,13 @@ async function runAgent(userText) {
   try {
     const tab = await runner.syncActiveTab();
     if (settings.engine === "web" && tab && tab.id === geminiTabId) {
-      throw new Error("A aba ativa é a do próprio Gemini. Volte para a página em que quer que eu trabalhe.");
+      throw new Error(t("activeIsGemini"));
     }
     const ctx = tab ? `\n\n[Aba atual: "${tab.title}" — ${tab.url}]` : "";
     if (settings.engine === "api") await runApi(userText, ctx);
     else await runWeb(userText, ctx);
   } catch (e) {
-    if (e.name === "AbortError") addEl("msg error", null, "Interrompido.");
+    if (e.name === "AbortError") addEl("msg error", null, t("interrupted"));
     else addEl("msg error", null, e.message || String(e));
   } finally {
     setBusy(false);
@@ -584,6 +615,7 @@ browser.tabs.onRemoved.addListener(id => {
   windowId = (await browser.windows.getCurrent()).id;
   runner = new ToolRunner(windowId);
   await loadSettings();
+  renderEmpty();
   updateTabContext();
   refreshAccount();
   setInterval(() => { if (!busy) refreshAccount(); }, 15000);

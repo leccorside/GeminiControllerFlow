@@ -11,6 +11,16 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.3 (idiomas: pt-BR, inglês, espanhol)
+
+- Novo campo **Idioma** nas configurações. Ao salvar, a barra lateral é retraduzida na hora (configurações, cabeçalho, selo da conta, tela inicial, sugestões, botões, confirmações, rótulos dos passos e mensagens de erro) e aparece um aviso de idioma alterado. Mensagens que já estavam no chat continuam como foram escritas.
+- `sidebar/i18n.js`: dicionário com 79 chaves nos 3 idiomas, `t(chave, variáveis)` e `applyI18n()` para elementos com `data-i18n`, `data-i18n-title`, `data-i18n-placeholder`. Conferido por script que todas as chaves usadas existem e que os 3 idiomas têm as mesmas chaves.
+- Idioma padrão: o do Firefox (`navigator.language`), caindo para pt-BR.
+- O Gemini passa a responder no idioma escolhido: a regra do prompt virou "Responda sempre em {idioma}". O restante do prompt e as mensagens internas para o modelo continuam em português (o modelo entende e isso evita manter 3 prompts).
+- O content script recebe `lang` em cada mensagem e devolve os erros (elemento não encontrado etc.) no idioma escolhido.
+- `_locales/` (pt_BR, en, es) para a descrição da extensão, o título do botão e a descrição do atalho no Firefox. Esses seguem o idioma do Firefox, não o da configuração (limitação da plataforma).
+- Versão 1.0.3 assinada (`web-ext-artifacts/a6e4eca4a5b84242aab2-1.0.3.xpi`) e aberta no Firefox para atualizar.
+
 ### 14/11/2026 — versão 1.0.2 (conta conectada no cabeçalho)
 
 - O selo ao lado de "Gemini" mostra a conta Google conectada no gemini.google.com (foto + e-mail, nome no tooltip), em verde. Sem conta, mostra "não conectado — fazer login" em vermelho e, ao clicar, abre a aba do Gemini para entrar.

@@ -14,87 +14,86 @@
       <span id="modelBadge" class="badge"></span>
     </div>
     <div class="top-actions">
-      <button id="btnNew" class="icon-btn" title="Nova conversa" aria-label="Nova conversa">
+      <button id="btnNew" class="icon-btn" data-i18n-title="newChat" title="Nova conversa" aria-label="Nova conversa">
         <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
       </button>
-      <button id="btnSettings" class="icon-btn" title="Configurações" aria-label="Configurações">
+      <button id="btnSettings" class="icon-btn" data-i18n-title="settings" title="Configurações" aria-label="Configurações">
         <svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
       </button>
     </div>
   </header>
 
   <section id="settings" class="settings" hidden>
-    <h2>Configurações</h2>
+    <h2 data-i18n="settings">Configurações</h2>
     <label class="field">
-      <span>Como usar o Gemini</span>
+      <span data-i18n="language">Idioma</span>
+      <select id="lang">
+        <option value="pt-BR">Português (Brasil)</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </label>
+    <label class="field">
+      <span data-i18n="engineLabel">Como usar o Gemini</span>
       <select id="engine">
-        <option value="web">Minha conta Google (gemini.google.com)</option>
-        <option value="api">Chave da API (Google AI Studio)</option>
+        <option value="web" data-i18n="engineWeb">Minha conta Google (gemini.google.com)</option>
+        <option value="api" data-i18n="engineApi">Chave da API (Google AI Studio)</option>
       </select>
       <small id="engineHelp"></small>
     </label>
     <div id="webFields" class="field">
-      <button id="btnOpenGemini" class="btn-secondary" type="button">Abrir o Gemini para fazer login</button>
+      <button id="btnOpenGemini" class="btn-secondary" type="button" data-i18n="openGemini">Abrir o Gemini para fazer login</button>
     </div>
     <div id="apiFields">
     <label class="field">
-      <span>Chave da API do Gemini</span>
+      <span data-i18n="apiKey">Chave da API do Gemini</span>
       <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-      <small>Crie em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Fica salva só neste Firefox.</small>
+      <small><span data-i18n="apiKeyHelpBefore">Crie em</span> <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a><span data-i18n="apiKeyHelpAfter">. Fica salva só neste Firefox.</span></small>
     </label>
     <label class="field">
-      <span>Modelo</span>
+      <span data-i18n="model">Modelo</span>
       <div class="row">
         <input id="model" list="modelList" spellcheck="false" placeholder="gemini-2.5-flash">
-        <button id="btnLoadModels" class="btn-secondary" type="button">Carregar</button>
+        <button id="btnLoadModels" class="btn-secondary" type="button" data-i18n="loadModels">Carregar</button>
       </div>
       <datalist id="modelList"></datalist>
       <small id="modelsStatus"></small>
     </label>
     </div>
     <label class="field">
-      <span>Pedir confirmação antes de agir</span>
+      <span data-i18n="confirmLabel">Pedir confirmação antes de agir</span>
       <select id="confirmMode">
-        <option value="js">Só para JavaScript</option>
-        <option value="all">Para toda ação (clicar, digitar, navegar…)</option>
-        <option value="never">Nunca</option>
+        <option value="js" data-i18n="confirmJs">Só para JavaScript</option>
+        <option value="all" data-i18n="confirmAll">Para toda ação (clicar, digitar, navegar…)</option>
+        <option value="never" data-i18n="confirmNever">Nunca</option>
       </select>
     </label>
     <label class="field">
-      <span>Máximo de passos por pedido</span>
+      <span data-i18n="maxSteps">Máximo de passos por pedido</span>
       <input id="maxSteps" type="number" min="5" max="200" step="5">
     </label>
     <div class="row end">
-      <button id="btnCloseSettings" class="btn-secondary" type="button">Fechar</button>
-      <button id="btnSaveSettings" class="btn-primary" type="button">Salvar</button>
+      <button id="btnCloseSettings" class="btn-secondary" type="button" data-i18n="close">Fechar</button>
+      <button id="btnSaveSettings" class="btn-primary" type="button" data-i18n="save">Salvar</button>
     </div>
   </section>
 
-  <main id="chat" class="chat" aria-live="polite">
-    <div id="empty" class="empty">
-      <img src="../icons/icon.svg" alt="" width="40" height="40">
-      <p class="empty-title">Como posso ajudar nesta página?</p>
-      <div class="suggestions">
-        <button class="chip" data-prompt="Resuma esta página.">Resuma esta página</button>
-        <button class="chip" data-prompt="Quais ações posso fazer nesta página?">O que dá pra fazer aqui?</button>
-        <button class="chip" data-prompt="Extraia os principais dados desta página em uma tabela.">Extrair dados em tabela</button>
-      </div>
-    </div>
-  </main>
+  <main id="chat" class="chat" aria-live="polite"></main>
 
   <footer class="composer">
     <div class="tab-context" id="tabContext"></div>
     <div class="input-wrap">
-      <textarea id="input" rows="1" placeholder="Peça algo para fazer nesta página…"></textarea>
-      <button id="btnSend" class="send" title="Enviar (Enter)" aria-label="Enviar">
+      <textarea id="input" rows="1" data-i18n-placeholder="inputPlaceholder" placeholder="Peça algo para fazer nesta página…"></textarea>
+      <button id="btnSend" class="send" data-i18n-title="send" title="Enviar (Enter)" aria-label="Enviar">
         <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <button id="btnStop" class="send stop" title="Parar" aria-label="Parar" hidden>
+      <button id="btnStop" class="send stop" data-i18n-title="stop" title="Parar" aria-label="Parar" hidden>
         <svg viewBox="0 0 24 24" width="14" height="14"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
       </button>
     </div>
   </footer>
 
+  <script src="i18n.js"></script>
   <script src="markdown.js"></script>
   <script src="gemini.js"></script>
   <script src="tools.js"></script>

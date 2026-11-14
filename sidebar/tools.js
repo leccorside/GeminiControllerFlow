@@ -155,8 +155,8 @@ class ToolRunner {
   }
 
   async content(cmd, args = {}) {
-    if (this.tabId == null) throw new Error("Nenhuma aba alvo.");
-    const send = () => browser.tabs.sendMessage(this.tabId, { __gc: true, cmd, args });
+    if (this.tabId == null) throw new Error(t("eNoTarget"));
+    const send = () => browser.tabs.sendMessage(this.tabId, { __gc: true, cmd, args, lang: LANG });
     let res;
     try {
       res = await send();
@@ -165,7 +165,7 @@ class ToolRunner {
       try {
         await browser.tabs.executeScript(this.tabId, { file: "/content/agent.js", runAt: "document_idle" });
       } catch (e) {
-        throw new Error(`Não consigo acessar esta página (${e.message}). Páginas internas do Firefox (about:, addons.mozilla.org, visualizador de PDF) bloqueiam extensões.`);
+        throw new Error(t("eNoAccess", { erro: e.message }));
       }
       res = await send();
     }
@@ -176,21 +176,21 @@ class ToolRunner {
   // Descrição curta exibida na interface.
   static label(name, a = {}) {
     switch (name) {
-      case "get_page": return a.query ? `Procurando "${a.query}" na página` : (a.include_text ? "Lendo a página (com texto)" : "Lendo a página");
-      case "get_text": return a.ref != null ? `Lendo o texto de [${a.ref}]` : "Lendo o texto da página";
-      case "screenshot": return "Capturando a tela";
-      case "click": return a.ref != null ? `Clicando em [${a.ref}]` : `Clicando em (${a.x}, ${a.y})`;
-      case "type_text": return `Digitando "${(a.text || "").slice(0, 60)}" em [${a.ref}]${a.submit ? " e enviando" : ""}`;
-      case "select_option": return `Selecionando "${a.value}" em [${a.ref}]`;
-      case "press_key": return `Pressionando ${[a.ctrl && "Ctrl", a.shift && "Shift", a.alt && "Alt", a.key].filter(Boolean).join("+")}`;
-      case "scroll": return `Rolando ${a.direction || "down"}`;
-      case "hover": return `Passando o mouse em [${a.ref}]`;
-      case "navigate": return `Navegando para ${a.url}`;
-      case "wait": return `Aguardando ${a.seconds}s`;
-      case "list_tabs": return "Listando abas";
-      case "switch_tab": return `Trocando para a aba ${a.tab_id}`;
-      case "open_tab": return `Abrindo nova aba: ${a.url}`;
-      case "run_javascript": return "Executando JavaScript na página";
+      case "get_page": return a.query ? t("lGetPageQuery", { q: a.query }) : t(a.include_text ? "lGetPageText" : "lGetPage");
+      case "get_text": return a.ref != null ? t("lGetTextRef", { ref: a.ref }) : t("lGetText");
+      case "screenshot": return t("lScreenshot");
+      case "click": return a.ref != null ? t("lClickRef", { ref: a.ref }) : t("lClickXY", { x: a.x, y: a.y });
+      case "type_text": return t(a.submit ? "lTypeSubmit" : "lType", { texto: (a.text || "").slice(0, 60), ref: a.ref });
+      case "select_option": return t("lSelect", { valor: a.value, ref: a.ref });
+      case "press_key": return t("lKey", { tecla: [a.ctrl && "Ctrl", a.shift && "Shift", a.alt && "Alt", a.key].filter(Boolean).join("+") });
+      case "scroll": return t("lScroll", { dir: a.direction || "down" });
+      case "hover": return t("lHover", { ref: a.ref });
+      case "navigate": return t("lNavigate", { url: a.url });
+      case "wait": return t("lWait", { s: a.seconds });
+      case "list_tabs": return t("lListTabs");
+      case "switch_tab": return t("lSwitchTab", { id: a.tab_id });
+      case "open_tab": return t("lOpenTab", { url: a.url });
+      case "run_javascript": return t("lJs");
       default: return name;
     }
   }
@@ -286,7 +286,7 @@ class ToolRunner {
       }
 
       default:
-        throw new Error(`Ferramenta desconhecida: ${name}`);
+        throw new Error(t("eUnknownTool", { nome: name }));
     }
   }
 }
@@ -302,7 +302,7 @@ function wrapAsExpression(code) {
 
 function normalizeUrl(u) {
   u = String(u || "").trim();
-  if (!u) throw new Error("URL vazia.");
+  if (!u) throw new Error(t("eEmptyUrl"));
   if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return u;
   if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/|$)/.test(u)) return "https://" + u;
   return "https://www.google.com/search?q=" + encodeURIComponent(u);
