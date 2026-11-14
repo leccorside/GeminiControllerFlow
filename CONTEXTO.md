@@ -11,6 +11,13 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.1 (barra à direita e botões)
+
+- **Bug**: os botões Enviar e Parar apareciam juntos. A classe `.send` define `display: grid`, que anula o atributo `hidden`. O mesmo afetava os blocos de configuração por motor. Correção: regra global `[hidden] { display: none !important; }` no `sidebar.css`.
+- **Barra lateral à direita**: a posição é preferência do Firefox, não da extensão (não há API para isso). Criado `user.js` no perfil `xi81vy5u.default-release` com `sidebar.position_start = false`; vale ao reiniciar o Firefox. Para voltar ao padrão, apagar o `user.js`.
+- `scripts/assinar-e-instalar.ps1` agora lê as credenciais do `.env` (aceita `WEB_EXT_API_KEY`/`WEB_EXT_API_SECRET` ou "Emissor JWT"/"Segredo JWT", com `=` ou `:`), sem exibir os valores.
+- Versão 1.0.1 assinada (`web-ext-artifacts/a6e4eca4a5b84242aab2-1.0.1.xpi`) e aberta no Firefox para atualizar.
+
 ### 14/11/2026 — instalação definitiva
 
 - O Firefox da máquina é o **160.0, canal release**: ele ignora `xpinstall.signatures.required` e só instala de vez extensões assinadas pela Mozilla.

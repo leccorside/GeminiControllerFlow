@@ -12,6 +12,18 @@ $ErrorActionPreference = "Stop"
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
 
+# Lê as credenciais do .env, se existir (aceita "CHAVE=valor" ou "CHAVE: valor").
+# Nomes aceitos: WEB_EXT_API_KEY / "Emissor JWT" e WEB_EXT_API_SECRET / "Segredo JWT".
+if (Test-Path .env) {
+    foreach ($linha in Get-Content .env -Encoding UTF8) {
+        if ($linha -match '^\s*([^=:#]+?)\s*[=:]\s*(.+?)\s*$') {
+            $nome = $Matches[1]; $valor = $Matches[2].Trim('"', "'")
+            if ($nome -match '^(WEB_EXT_API_KEY|Emissor JWT)$' -and -not $env:WEB_EXT_API_KEY) { $env:WEB_EXT_API_KEY = $valor }
+            if ($nome -match '^(WEB_EXT_API_SECRET|Segredo JWT)$' -and -not $env:WEB_EXT_API_SECRET) { $env:WEB_EXT_API_SECRET = $valor }
+        }
+    }
+}
+
 if (-not $env:WEB_EXT_API_KEY) {
     $env:WEB_EXT_API_KEY = Read-Host "Emissor JWT (JWT issuer, ex.: user:12345:678)"
 }

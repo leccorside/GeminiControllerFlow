@@ -33,6 +33,8 @@ body {
   background: var(--bg); color: var(--text);
   font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+/* Classes com display (grid/flex) anulam o atributo hidden; isto garante que ele vença. */
+[hidden] { display: none !important; }
 button { font: inherit; color: inherit; cursor: pointer; }
 a { color: var(--accent-2); }
 
