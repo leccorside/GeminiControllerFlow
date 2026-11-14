@@ -12,21 +12,27 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 ## Histórico de implementações
 
 ### 14/11/2026 — instalação definitiva
+
 - O Firefox da máquina é o **160.0, canal release**: ele ignora `xpinstall.signatures.required` e só instala de vez extensões assinadas pela Mozilla.
 - Criado `scripts/assinar-e-instalar.ps1` (UTF-8 com BOM, para os acentos saírem certos no PowerShell 5.1): lê `WEB_EXT_API_KEY`/`WEB_EXT_API_SECRET` ou pede no terminal (segredo como SecureString, sem gravar em arquivo), roda `web-ext sign --channel=unlisted`, abre o `.xpi` assinado no Firefox e apaga o segredo da sessão.
 - A conta e as chaves do addons.mozilla.org são do usuário: o Claude não cria contas nem digita credenciais, por isso a assinatura é executada pelo próprio usuário.
 - Cada nova assinatura exige subir a `version` do `manifest.json`.
+- **Versão 1.0.0 assinada pela Mozilla** em 14/11/2026 (aprovação automática em poucos minutos): `web-ext-artifacts/a6e4eca4a5b84242aab2-1.0.0.xpi`, aberto no Firefox para instalação definitiva.
+- **Erro**: depois de baixar o `.xpi`, o web-ext falhou com `ENOENT ... lstat 'C:\Users\JOHNAT~1\AppData\Local\Temp\tmp-web-ext-...'` ao limpar a pasta temporária (provável problema com o caminho curto 8.3 do usuário) e o script parou antes de abrir o Firefox. **Correção**: o script agora decide o sucesso pela existência de um `.xpi` novo da versão atual, não só pelo código de saída, e segue para a instalação. `.env` também passou a ser ignorado no pacote.
 
 ### 14/11/2026 — repositório git
+
 - `git init` feito pelo usuário. O Git do Windows (`core.autocrlf=true`) avisava "LF will be replaced by CRLF" porque os arquivos são criados com LF.
 - Correção: `.gitattributes` com `* text=auto eol=lf` (mantém LF no repositório e na cópia de trabalho, sem aviso) e `.gitignore` ignorando `web-ext-artifacts/` (pacotes gerados), `node_modules/` e `.claude/`.
 
 ### 14/11/2026 — renomeada para GeminiControllerFlow
+
 - Nome exibido (`manifest.json`, prompt do modo web, README) trocado de "Gemini Controler" para **GeminiControllerFlow**.
 - ID do Gecko trocado para `geminicontrollerflow@local`. Como ainda não houve versão publicada, não há instalação a migrar; quem carregou a versão anterior deve removê-la em `about:debugging` e carregar de novo.
 - A pasta do projeto continua `gemini-controler` (renomear a pasta fica a critério do usuário).
 
 ### 14/11/2026 — versão inicial
+
 - **Arquitetura**: o loop do agente roda na própria página da barra lateral (tem acesso a `browser.tabs`), sem depender do background. O background só alterna a barra lateral pelo ícone.
 - **Content script `content/agent.js`** injetado sob demanda (`tabs.executeScript`) quando a primeira ferramenta é chamada; atribui `data-gc-ref` aos elementos e mantém as referências estáveis entre leituras.
 - **Digitação**: `input`/`textarea` usam o setter nativo de `value` + eventos `input`/`change` (compatível com React); editores `contenteditable` (Lexical/Draft, como o do Facebook) usam `document.execCommand('insertText')`.

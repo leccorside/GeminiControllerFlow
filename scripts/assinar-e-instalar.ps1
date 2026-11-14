@@ -24,18 +24,26 @@ if (-not $env:WEB_EXT_API_SECRET) {
 $versao = (Get-Content manifest.json -Raw | ConvertFrom-Json).version
 Write-Host "Assinando a versão $versao (pode levar alguns minutos)..." -ForegroundColor Cyan
 
+$inicio = Get-Date
 npx --yes web-ext@8 sign `
     --channel=unlisted `
     --artifacts-dir web-ext-artifacts `
-    --ignore-files "CONTEXTO.md" "README.md" "scripts/**" ".gitattributes" ".gitignore"
+    --ignore-files "CONTEXTO.md" "README.md" "scripts/**" ".gitattributes" ".gitignore" ".env"
+$codigo = $LASTEXITCODE
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Falha ao assinar. Se o erro disser que a versão já existe, aumente 'version' no manifest.json e rode de novo." -ForegroundColor Red
+# O web-ext no Windows às vezes falha ao apagar a pasta temporária (ENOENT) DEPOIS de baixar o .xpi assinado.
+# Por isso o sucesso é decidido pela existência de um .xpi novo da versão atual, e não só pelo código de saída.
+$xpi = Get-ChildItem web-ext-artifacts -Filter "*-$versao.xpi" -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -ge $inicio } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+if (-not $xpi) {
+    Write-Host "Falha ao assinar (código $codigo). Se o erro disser que a versão já existe, aumente 'version' no manifest.json e rode de novo." -ForegroundColor Red
+    Remove-Item Env:WEB_EXT_API_SECRET -ErrorAction SilentlyContinue
     exit 1
 }
-
-$xpi = Get-ChildItem web-ext-artifacts -Filter *.xpi | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $xpi) { Write-Host "Arquivo .xpi assinado não encontrado em web-ext-artifacts." -ForegroundColor Red; exit 1 }
+if ($codigo -ne 0) {
+    Write-Host "O web-ext terminou com erro depois de baixar o arquivo assinado (limpeza de temporários); o .xpi está ok." -ForegroundColor Yellow
+}
 
 Write-Host "Assinado: $($xpi.FullName)" -ForegroundColor Green
 Write-Host "Abrindo no Firefox — confirme em 'Adicionar' na janela que aparecer." -ForegroundColor Cyan
