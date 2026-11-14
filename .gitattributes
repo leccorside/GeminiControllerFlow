@@ -1,0 +1,8 @@
+# Mantém LF no repositório e na cópia de trabalho (evita o aviso "LF will be replaced by CRLF").
+* text=auto eol=lf
+
+*.svg text eol=lf
+*.png binary
+*.jpg binary
+*.zip binary
+*.xpi binary

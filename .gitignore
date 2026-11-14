@@ -1,0 +1,8 @@
+# Pacotes gerados pelo web-ext build
+web-ext-artifacts/
+*.xpi
+
+node_modules/
+.claude/
+.DS_Store
+Thumbs.db

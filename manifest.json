@@ -1,0 +1,53 @@
+{
+  "manifest_version": 2,
+  "name": "GeminiControllerFlow",
+  "version": "1.0.0",
+  "description": "Assistente Gemini na barra lateral do Firefox, com leitura completa da página aberta e execução de ações (clicar, digitar, rolar, navegar).",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "permissions": [
+    "<all_urls>",
+    "tabs",
+    "activeTab",
+    "storage"
+  ],
+  "sidebar_action": {
+    "default_title": "Gemini",
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": "icons/icon.svg",
+    "open_at_install": true
+  },
+  "browser_action": {
+    "default_title": "Abrir o Gemini na barra lateral",
+    "default_icon": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content/gemini-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "commands": {
+    "_execute_sidebar_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      },
+      "description": "Abrir/fechar o Gemini na barra lateral"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "geminicontrollerflow@local",
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
