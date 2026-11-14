@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "GeminiControllerFlow",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Assistente Gemini na barra lateral do Firefox, com leitura completa da página aberta e execução de ações (clicar, digitar, rolar, navegar).",
   "icons": {
     "48": "icons/icon.svg",

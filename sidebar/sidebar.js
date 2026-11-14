@@ -72,8 +72,64 @@ async function loadSettings() {
   updateBadge();
 }
 
+let lastAccount = null; // { email, nome, foto } da conta conectada no gemini.google.com
+
 function updateBadge() {
-  $("modelBadge").textContent = settings.engine === "web" ? "conta Google" : settings.model;
+  const badge = $("modelBadge");
+  badge.replaceChildren();
+  badge.classList.remove("connected", "disconnected");
+  badge.onclick = null;
+  if (settings.engine !== "web") {
+    badge.textContent = settings.model;
+    badge.title = "Modelo da API";
+    return;
+  }
+  if (lastAccount) {
+    if (lastAccount.foto) {
+      const img = document.createElement("img");
+      img.src = lastAccount.foto; img.alt = ""; img.className = "avatar";
+      img.referrerPolicy = "no-referrer";
+      img.onerror = () => img.remove();
+      badge.appendChild(img);
+    }
+    const txt = document.createElement("span");
+    txt.textContent = lastAccount.email;
+    badge.appendChild(txt);
+    badge.classList.add("connected");
+    badge.title = `Conectado ao Gemini como ${lastAccount.nome ? lastAccount.nome + " — " : ""}${lastAccount.email}`;
+  } else {
+    badge.textContent = "não conectado — fazer login";
+    badge.classList.add("disconnected");
+    badge.title = "Abrir o gemini.google.com para entrar com sua conta Google";
+    badge.onclick = () => ensureGeminiTab({ activate: true }).then(applyStatus).catch(() => {});
+  }
+}
+
+function applyStatus(st) {
+  const conta = st && st.conta ? st.conta : null;
+  if (JSON.stringify(conta) !== JSON.stringify(lastAccount)) {
+    lastAccount = conta;
+    updateBadge();
+  }
+  return st;
+}
+
+// Consulta a aba do Gemini (se já existir) para saber qual conta está conectada. Não abre aba nova.
+async function refreshAccount() {
+  if (settings.engine !== "web") return;
+  try {
+    let tab = null;
+    if (geminiTabId != null) tab = await browser.tabs.get(geminiTabId).catch(() => null);
+    if (!tab || !/^https:\/\/gemini\.google\.com\//.test(tab.url || "")) {
+      const found = await browser.tabs.query({ url: "https://gemini.google.com/*" });
+      tab = found.find(t => t.windowId === windowId) || found[0] || null;
+    }
+    if (!tab) { applyStatus(null); return; }
+    geminiTabId = tab.id;
+    applyStatus(await browser.tabs.sendMessage(tab.id, { __gcBridge: true, cmd: "status" }));
+  } catch (_) {
+    /* aba ainda carregando: tenta de novo no próximo ciclo */
+  }
 }
 
 function refreshEngineFields() {
@@ -394,7 +450,7 @@ function compact(obj, max = 20000) {
 }
 
 async function runWeb(userText, ctx) {
-  const st = await ensureGeminiTab({ fresh: webFresh });
+  const st = applyStatus(await ensureGeminiTab({ fresh: webFresh }));
   if (webFresh && !st.logado) {
     addEl("msg error", null, "Você não está logado no gemini.google.com — vou usar o modo sem login. Para usar sua conta, clique em Configurações → \"Abrir o Gemini para fazer login\".");
   }
@@ -514,13 +570,22 @@ chat.addEventListener("click", e => {
 browser.tabs.onActivated.addListener(info => { if (info.windowId === windowId) updateTabContext(); });
 browser.tabs.onUpdated.addListener((id, change, tab) => {
   if (tab.windowId === windowId && (change.title || change.url)) updateTabContext();
+  // Login/logout ou troca de conta recarregam o gemini.google.com: atualiza a conta exibida.
+  if (change.status === "complete" && /^https:\/\/gemini\.google\.com\//.test(tab.url || "")) {
+    setTimeout(refreshAccount, 1500);
+    setTimeout(refreshAccount, 5000);
+  }
 });
-browser.tabs.onRemoved.addListener(id => { if (id === geminiTabId) { geminiTabId = null; webFresh = true; } });
+browser.tabs.onRemoved.addListener(id => {
+  if (id === geminiTabId) { geminiTabId = null; webFresh = true; applyStatus(null); }
+});
 
 (async () => {
   windowId = (await browser.windows.getCurrent()).id;
   runner = new ToolRunner(windowId);
   await loadSettings();
   updateTabContext();
+  refreshAccount();
+  setInterval(() => { if (!busy) refreshAccount(); }, 15000);
   $("input").focus();
 })();

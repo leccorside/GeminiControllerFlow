@@ -19,6 +19,24 @@
     return !signIn;
   }
 
+  // Conta Google conectada: lida do botão do avatar ("Conta do Google: Nome (email@gmail.com)").
+  function account() {
+    const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/;
+    const candidates = [...document.querySelectorAll(
+      "a[aria-label*='Conta do Google'], a[aria-label*='Google Account'], a[href*='accounts.google.com/SignOutOptions'], [aria-label*='@']"
+    )];
+    for (const el of candidates) {
+      const label = (el.getAttribute("aria-label") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+      const email = label.match(EMAIL)?.[0];
+      if (!email) continue;
+      let nome = label.replace(/^[^:]*:\s*/, "").replace(/\(?\s*[\w.+-]+@[\w-]+(\.[\w-]+)+\s*\)?/, "").trim();
+      if (!nome || nome === label) nome = "";
+      const img = el.querySelector("img");
+      return { email, nome, foto: img?.src || null };
+    }
+    return null;
+  }
+
   // Converte o HTML da resposta em texto/markdown simples, preservando blocos de código.
   function toText(root) {
     let out = "";
@@ -155,7 +173,10 @@
     if (!msg || msg.__gcBridge !== true) return undefined;
     switch (msg.cmd) {
       case "ping": return Promise.resolve({ ok: true });
-      case "status": return Promise.resolve({ ok: true, pronto: !!editor(), logado: isLoggedIn(), url: location.href });
+      case "status": {
+        const conta = account();
+        return Promise.resolve({ ok: true, pronto: !!editor(), logado: !!conta || isLoggedIn(), conta, url: location.href });
+      }
       case "ask": return ask(msg.args).catch(e => ({ erro: e.message || String(e) }));
       case "stop": stopRequested = true; stopButton()?.click(); return Promise.resolve({ ok: true });
       default: return Promise.resolve({ erro: "comando desconhecido" });

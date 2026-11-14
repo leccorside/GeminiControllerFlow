@@ -11,6 +11,14 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.2 (conta conectada no cabeçalho)
+
+- O selo ao lado de "Gemini" mostra a conta Google conectada no gemini.google.com (foto + e-mail, nome no tooltip), em verde. Sem conta, mostra "não conectado — fazer login" em vermelho e, ao clicar, abre a aba do Gemini para entrar.
+- A ponte (`content/gemini-bridge.js`) lê a conta no botão do avatar pelo `aria-label` ("Conta do Google: Nome (email)" / "Google Account: …"), com regex de e-mail. O comando `status` passou a devolver `conta`.
+- A barra lateral consulta a aba do Gemini já aberta (sem abrir aba nova) ao iniciar, a cada 15 s, quando a aba do Gemini termina de carregar (login/logout recarrega a página) e a cada pedido. Fechar a aba do Gemini volta o selo para "não conectado".
+- Não foi possível testar com uma conta logada aqui: o formato do `aria-label` foi testado com exemplos, mas precisa ser confirmado no Firefox do usuário.
+- Versão 1.0.2 assinada (`web-ext-artifacts/a6e4eca4a5b84242aab2-1.0.2.xpi`) e aberta no Firefox para atualizar.
+
 ### 14/11/2026 — versão 1.0.1 (barra à direita e botões)
 
 - **Bug**: os botões Enviar e Parar apareciam juntos. A classe `.send` define `display: grid`, que anula o atributo `hidden`. O mesmo afetava os blocos de configuração por motor. Correção: regra global `[hidden] { display: none !important; }` no `sidebar.css`.
