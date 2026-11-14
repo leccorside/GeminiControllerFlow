@@ -1,9 +1,14 @@
 # Pacotes gerados pelo web-ext build
 web-ext-artifacts/
 *.xpi
+# Exceção: versões assinadas servidas para a atualização automática do Firefox
+!updates/*.xpi
 
 node_modules/
 .claude/
 .DS_Store
 Thumbs.db
 .env
+
+# Cache de upload do web-ext sign
+.amo-upload-uuid

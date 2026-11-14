@@ -22,12 +22,23 @@ A instalação temporária some ao fechar o Firefox.
 O Firefox normal só instala de vez extensões assinadas pela Mozilla. A assinatura "não listada" é gratuita e automática (a extensão não aparece na loja):
 
 1. Entre (ou crie a conta) em [addons.mozilla.org](https://addons.mozilla.org) e gere as credenciais em [Gerenciar chaves de API](https://addons.mozilla.org/pt-BR/developers/addon/api/key/) — *Emissor JWT* e *Segredo JWT*.
-2. Na pasta do projeto, rode:
+2. Na pasta do projeto, rode (na primeira vez, com `-Instalar`):
    ```
-   powershell -ExecutionPolicy Bypass -File scripts\assinar-e-instalar.ps1
+   powershell -ExecutionPolicy Bypass -File scripts\assinar-e-instalar.ps1 -Instalar
    ```
-   O script pede as duas credenciais (não grava em arquivo), assina, gera o `.xpi` em `web-ext-artifacts/` e abre no Firefox. Confirme em **Adicionar**.
-3. Para publicar uma atualização, aumente `version` no `manifest.json` e rode o script de novo (a Mozilla não assina a mesma versão duas vezes).
+   O script lê as credenciais do `.env` (`Emissor JWT: …` / `Segredo JWT: …`) ou pede no terminal, assina e abre no Firefox. Confirme em **Adicionar**. Esse clique só é necessário uma vez.
+
+## Atualização automática
+
+A extensão declara um `update_url` (`updates/updates.json` neste repositório, servido pelo `raw.githubusercontent.com`). O Firefox consulta esse arquivo periodicamente e instala as versões novas sozinho, sem pedir confirmação (só pede se a versão nova exigir permissões novas).
+
+Para lançar uma versão:
+
+1. Aumente `version` no `manifest.json` (a Mozilla não assina a mesma versão duas vezes).
+2. Rode `powershell -ExecutionPolicy Bypass -File scripts\assinar-e-instalar.ps1` (sem `-Instalar`). Ele assina e atualiza a pasta `updates/` (o `.xpi` e o `updates.json` com o hash SHA-256; mantém as 5 últimas versões).
+3. Faça commit e push para a `main`. A partir daí, cada Firefox com a extensão instalada se atualiza na próxima verificação.
+
+O Firefox verifica atualizações de extensões a cada 24 h por padrão. Para verificar a cada 1 h, use `user_pref("extensions.update.interval", 3600);` no `user.js` do perfil. Para forçar na hora: `about:addons` → engrenagem → **Procurar atualizações**.
 
 Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinstall.signatures.required = false` em `about:config`, instalando o `.zip` de `web-ext-artifacts/` em `about:addons` → engrenagem → *Instalar extensão de um arquivo*.
 

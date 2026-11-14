@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "GeminiControllerFlow",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "default_locale": "pt_BR",
   "description": "__MSG_extensionDescription__",
   "icons": {
@@ -52,6 +52,7 @@
     "gecko": {
       "id": "geminicontrollerflow@local",
       "strict_min_version": "115.0",
+      "update_url": "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/updates.json",
       "data_collection_permissions": {
         "required": [
           "none"

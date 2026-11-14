@@ -11,6 +11,16 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.5 (atualização automática)
+
+- `manifest.json` ganhou `browser_specific_settings.gecko.update_url` = `https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/updates.json` (repositório público). O Firefox consulta esse arquivo e instala sozinho versões novas assinadas, sem confirmação, desde que não peçam permissões novas.
+- `scripts/assinar-e-instalar.ps1` agora, depois de assinar, copia o `.xpi` para `updates/geminicontrollerflow-<versão>.xpi` e regrava `updates/updates.json` (link raw + `update_hash` SHA-256), mantendo as 5 últimas versões. Só abre o Firefox com `-Instalar` (necessário só na primeira instalação com `update_url`). Os arquivos entram no ar quando o usuário faz commit + push da `updates/` na `main` (o Claude não commita).
+- `.gitignore`: exceção `!updates/*.xpi` e `.amo-upload-uuid` ignorado.
+- `user.js` do perfil: `extensions.update.interval = 3600` (verifica a cada 1 h em vez de 24 h).
+- **Erro 1**: "This upload has already been submitted" — o web-ext 8 guarda o upload em `.amo-upload-uuid` e o reaproveitou. Correção: o script apaga esse arquivo antes de assinar. A versão 1.0.4 ficou registrada no AMO sem o arquivo baixado, por isso pulamos para a 1.0.5.
+- **Erro 2**: o `.xpi` passou a ter 1,18 MB porque o `logo-geminicontrollerflow.png` (só para o GitHub) entrou no pacote. Correção: `logo-*.png` e `*.md` no `--ignore-files` (vale a partir da próxima versão; a 1.0.5 ainda leva o logo).
+- 1.0.5 assinada e aberta no Firefox para a instalação manual única.
+
 ### 14/11/2026 — versão 1.0.3 (idiomas: pt-BR, inglês, espanhol)
 
 - Novo campo **Idioma** nas configurações. Ao salvar, a barra lateral é retraduzida na hora (configurações, cabeçalho, selo da conta, tela inicial, sugestões, botões, confirmações, rótulos dos passos e mensagens de erro) e aparece um aviso de idioma alterado. Mensagens que já estavam no chat continuam como foram escritas.

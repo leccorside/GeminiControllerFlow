@@ -1,0 +1,18 @@
+{
+    "addons":  {
+                   "geminicontrollerflow@local":  {
+                                                      "updates":  [
+                                                                      {
+                                                                          "version":  "1.0.5",
+                                                                          "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.5.xpi",
+                                                                          "update_hash":  "sha256:59d2995ed6aa626f5ea9d0f25b67f85bba3a9e12dcba1ab11ba20b9abe4c28ca",
+                                                                          "applications":  {
+                                                                                               "gecko":  {
+                                                                                                             "strict_min_version":  "115.0"
+                                                                                                         }
+                                                                                           }
+                                                                      }
+                                                                  ]
+                                                  }
+               }
+}
