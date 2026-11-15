@@ -11,6 +11,21 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.21 (Elementor bloco a bloco, mais fidelidade, página publicada, envio sem botão)
+
+- **Pedidos**: "faça o cursor verde inserir bloco a bloco, como se fosse uma pessoa"; "não está seguindo fielmente a página que mandei" (referência Versell: selos, títulos com palavra em verde, cards com ícone, FAQ, faixas escuras); no teste real o save recusou a página já publicada e, depois do "prossiga", veio "Botão de enviar do Gemini não encontrado".
+- **Build bloco a bloco** (`content/agent.js`): o `build` agora roda no content script, uma `pageEval` por seção (`criarSecao`, devolve ids das colunas) e uma por widget (`elementor.getContainer(id)`). Depois de cada bloco, `mostrarBloco(id)` rola a pré-visualização (`#elementor-preview-iframe`, mesma origem) até `[data-id]`, desenha um contorno verde dentro dela e leva o cursor verde até lá (clique visual nos widgets). Sem o "Gemini em Ação" ligado não há espera.
+- **Mais recursos de layout** (`EL_WIDGETS`): seção com `gradiente`, `padding` em lista, `largura_max`, `gap`, `alinhamento_vertical`/`alinhamento`, `borda_raio`, `sombra`; coluna como objeto `{largura, fundo, borda, borda_raio, sombra, padding, widgets}` (cards); widgets novos `selo` (etiqueta arredondada via HTML), `icone_caixa` (icon-box), `faq` (toggle/accordion); tipografia (`tamanho_celular`, `peso`, `fonte`, `altura_linha`) em títulos/textos/botões; botão com `borda_raio`/`padding`/`borda`; imagem com `largura`/`borda_raio`/`sombra`. `set_title` ganhou `layout` (padrao/largura_total/canvas → `template`).
+- **Erros encontrados no teste local (WordPress Playground + Elementor 4.4.0) e corrigidos**:
+  - 3º card quebrava de linha: largura das colunas não descontava o `gap` + padding. Agora sem `flex_wrap` e largura = % − parte do gap (estimando ~1000 px úteis).
+  - Títulos sem cor saíam no azul global do kit (#6EC1E4) — vem do CSS global, `__globals__` vazio não resolve. Agora cor padrão conforme o fundo da coluna/seção (`fundoEscuro` por luminância): #111111/#4b5563 no claro, #ffffff/#d1d5db no escuro.
+  - `save` logo após o build falhava com "Document already in save progress" (salvamento automático): agora tenta de novo por até 30 s.
+  - Erros do Elementor chegavam como "[object Object]": `pageJob` usa `message`/`statusText`/JSON.
+- **Página já publicada**: `save` (wordpress e elementor) aceita `atualizar_publicada: true` (Elementor usa `document/save/update`, mantém publicada). Segurança: `needsConfirm` SEMPRE pede o clique do usuário nesse caso (nem "permitir tudo" nem "nunca confirmar" pulam), pois o pedido poderia vir de texto da página. Testado: sem a flag recusa; com a flag atualiza (status continua publish).
+- **Envio sem botão** (`content/gemini-bridge.js`): espera o botão de enviar por até 30 s e, se não aparecer/habilitar, envia com Enter na caixa em vez de devolver erro.
+- **Roteiro Elementor** (`sidebar/skills.js`): inventário obrigatório da referência (seções, fundos, colunas, cards, selos, destaques, qual anexo em cada imagem), montar em partes de até 4 seções, conferir com screenshot/get_structure e refazer o que não bater; exemplo completo no estilo da referência; regra da página publicada.
+- Teste no Playground: 3 seções/10 widgets em ~2 s (sem pausas do cursor), 16 posições de cursor e 13 cliques visuais registrados; print da pré-visualização conferido. Regressão do painel com a extensão real ok (hover com cursor verde; confirmação de JavaScript aguardando o usuário, como esperado).
+
 ### 15/11/2026 — versão 1.0.20 ("Gemini em Ação" e JSON de ação quebrado)
 
 - **Pedido**: borda verde sutil na página + aviso "Gemini em Ação" no topo enquanto o agente controla a página, e cursor verde em tempo real onde ele clica, "como uma pessoa montando a página".

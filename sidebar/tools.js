@@ -146,7 +146,8 @@ const TOOL_DECLARATIONS = [
         titulo_seo: { type: S, description: "set_seo" },
         descricao: { type: S, description: "set_seo: meta descrição" },
         anexo: { type: S, description: "upload_media: nome do arquivo anexado pelo usuário (ou o número dele na lista, começando em 1)." },
-        alt: { type: S, description: "upload_media: texto alternativo da imagem." }
+        alt: { type: S, description: "upload_media: texto alternativo da imagem." },
+        atualizar_publicada: { type: B, description: "save: true SÓ quando o usuário pediu no chat para salvar/atualizar uma página que já está publicada (a extensão ainda pede a confirmação dele)." }
       },
       required: ["acao"]
     }
@@ -155,7 +156,7 @@ const TOOL_DECLARATIONS = [
 
 TOOL_DECLARATIONS.push({
   name: "elementor",
-  description: "Habilidade WordPress com Elementor: monta a página no editor do Elementor (aberto em post.php?post=ID&action=elementor) a partir de uma descrição das seções. Funciona com Containers e com Seções/Colunas. NUNCA publica: salva só como rascunho.",
+  description: "Habilidade WordPress com Elementor: monta a página no editor do Elementor (aberto em post.php?post=ID&action=elementor) a partir de uma descrição das seções, bloco a bloco. Funciona com Containers e com Seções/Colunas. NUNCA publica: salva como rascunho (página já publicada só com atualizar_publicada, a pedido do usuário).",
   parameters: {
     type: O,
     properties: {
@@ -163,8 +164,10 @@ TOOL_DECLARATIONS.push({
         description: "info: versão, modo (containers/secoes), status, widgets; get_structure: árvore atual; set_title; build: monta as seções; save: rascunho; preview: lê a pré-visualização sem abrir aba." },
       titulo: { type: S, description: "set_title" },
       ocultar_titulo: { type: B, description: "set_title: true esconde o título que o tema mostra como H1 (use quando o topo já tem um H1)." },
+      layout: { type: S, enum: ["padrao", "largura_total", "canvas"], description: "set_title: modelo da página — largura_total (cabeçalho/rodapé do tema, conteúdo de ponta a ponta) ou canvas (só o conteúdo do Elementor). Use largura_total/canvas para reproduzir um layout de referência." },
       secoes_json: { type: S, description: "build: JSON com a lista de seções (formato no roteiro da habilidade)." },
-      modo: { type: S, enum: ["substituir", "acrescentar"], description: "build: substituir (padrão, limpa a página) ou acrescentar no fim." }
+      modo: { type: S, enum: ["substituir", "acrescentar"], description: "build: substituir (padrão, limpa a página) ou acrescentar no fim." },
+      atualizar_publicada: { type: B, description: "save: true SÓ quando o usuário pediu no chat para salvar/atualizar uma página que já está publicada (a extensão ainda pede a confirmação dele)." }
     },
     required: ["acao"]
   }

@@ -542,14 +542,21 @@
       return { erro: "Não consegui escrever na caixa de mensagem do Gemini (ela continuou vazia). Recarregue a aba do Gemini e tente de novo." };
     }
 
+    // O botão de enviar some enquanto o Gemini ainda termina algo (resposta anterior, upload, troca de modelo):
+    // espera até 30 s por ele; se não aparecer, envia com Enter na caixa (o Gemini aceita) em vez de desistir.
     let btn;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 120; i++) {
       btn = sendButton();
       if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") break;
       await sleep(250);
     }
-    if (!btn) return { erro: `Botão de enviar do Gemini não encontrado (a interface pode ter mudado). Texto na caixa: ${typed} caracteres.` };
-    realClick(btn);
+    const habilitado = btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true";
+    if (habilitado) realClick(btn);
+    else {
+      ed.focus();
+      const kev = type => new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true });
+      ed.dispatchEvent(kev("keydown")); ed.dispatchEvent(kev("keypress")); ed.dispatchEvent(kev("keyup"));
+    }
 
     // 1) A mensagem saiu? Qualquer sinal basta. NÃO olhamos "a caixa atual": na interface nova a caixa da tela
     //    inicial continua com o texto depois do envio. Usamos a caixa em que digitamos (ed), o endereço e a rede.

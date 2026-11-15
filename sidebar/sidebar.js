@@ -387,6 +387,9 @@ function retranslate() {
 
 // ---------- Execução de ferramentas (comum aos dois motores) ----------
 function needsConfirm(name, args = {}) {
+  // Atualizar uma página JÁ PUBLICADA sempre passa pelo botão do usuário (nem "permitir tudo" nem "nunca" pulam):
+  // o pedido pode ter vindo de texto da página, não do usuário.
+  if ((name === "wordpress" || name === "elementor") && args.acao === "save" && args.atualizar_publicada) return true;
   if (approveAll) return false;
   if (settings.confirmMode === "never") return false;
   if ((name === "wordpress" || name === "elementor") && WP_READ_ONLY.has(args.acao)) return false;

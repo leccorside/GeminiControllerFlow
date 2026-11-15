@@ -463,7 +463,9 @@
       window.__gcfJobs[__id] = null;
       Promise.resolve().then(function(){ return (async function(){ ${body} })(); })
         .then(function(v){ window.__gcfJobs[__id] = { ok: true, v: v === undefined ? null : v }; },
-              function(e){ window.__gcfJobs[__id] = { ok: false, erro: String(e && (e.message || e.code) || e) }; });
+              function(e){ var m = e && (e.message || e.code || e.statusText || (e.responseJSON && e.responseJSON.message));
+                if (!m) { try { m = JSON.stringify(e).slice(0, 300); } catch (x) { m = String(e); } }
+                window.__gcfJobs[__id] = { ok: false, erro: String(m) }; });
       return "1"; })()`);
     const fim = Date.now() + timeoutMs;
     while (Date.now() < fim) {
@@ -609,8 +611,9 @@
         const r = await pageJob(`
           var sel = wp.data.select("core/editor"), dis = wp.data.dispatch("core/editor");
           var st = sel.getEditedPostAttribute("status");
-          if (st === "publish" || st === "future" || st === "private") throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Peça autorização ao usuário.");
-          if (st !== "draft") dis.editPost({ status: "draft" });
+          var publicada = st === "publish" || st === "future" || st === "private";
+          if (publicada && !${a.atualizar_publicada ? "true" : "false"}) throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Pergunte ao usuário; se ele pedir, chame save com atualizar_publicada: true.");
+          if (!publicada && st !== "draft") dis.editPost({ status: "draft" });
           await dis.savePost();
           for (var i = 0; i < 120 && sel.isSavingPost(); i++) await new Promise(function(r){ setTimeout(r, 250); });
           if (sel.didPostSaveRequestFail && sel.didPostSaveRequestFail()) throw new Error("O WordPress recusou o salvamento.");
@@ -663,24 +666,139 @@
   const EL_WIDGETS = `
     function px(n){ return { unit: "px", size: Number(n) }; }
     function alinha(a){ return ({ esquerda: "left", centro: "center", direita: "right", justificado: "justify" })[a] || a || undefined; }
+    function flexAlinha(a){ return ({ esquerda: "flex-start", inicio: "flex-start", topo: "flex-start", centro: "center", direita: "flex-end", fim: "flex-end", base: "flex-end", espacado: "space-between" })[a] || a || undefined; }
     function limpa(o){ Object.keys(o).forEach(function(k){ if (o[k] === undefined || o[k] === null || o[k] === "") delete o[k]; }); return o; }
-    function widgetModel(w){
+    function quatro(v, lados){ // número, [v,h] ou [t,r,b,l] -> dimensões do Elementor
+      var a = Array.isArray(v) ? v : [v, lados == null ? v : lados];
+      var t = a[0], r = a.length > 1 ? a[1] : a[0], b = a.length > 2 ? a[2] : t, l = a.length > 3 ? a[3] : r;
+      return { unit: "px", top: String(t), right: String(r), bottom: String(b), left: String(l), isLinked: t === r && r === b && b === l };
+    }
+    function sombra(v){ if (!v) return null; var forte = v === "forte"; return { horizontal: 0, vertical: forte ? 18 : 8, blur: forte ? 48 : 28, spread: 0, color: forte ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.08)" }; }
+    function tipografia(s, w, pre){ // tamanho, peso, fonte, altura_linha, espacamento
+      pre = pre || "typography";
+      if (w.tamanho || w.peso || w.fonte || w.altura_linha || w.espacamento) s[pre + "_typography"] = "custom";
+      if (w.tamanho) s[pre + "_font_size"] = px(w.tamanho);
+      if (w.tamanho_celular) s[pre + "_font_size_mobile"] = px(w.tamanho_celular);
+      if (w.peso) s[pre + "_font_weight"] = String(w.peso);
+      if (w.fonte) s[pre + "_font_family"] = w.fonte;
+      if (w.altura_linha) s[pre + "_line_height"] = { unit: "em", size: Number(w.altura_linha) };
+      if (w.espacamento) s[pre + "_letter_spacing"] = px(w.espacamento);
+      return s;
+    }
+    function caixa(s, o){ // fundo/gradiente/imagem, padding, borda, cantos e sombra (seções, colunas e cards)
+      if (o.gradiente) { s.background_background = "gradient"; s.background_color = o.gradiente[0]; s.background_color_b = o.gradiente[1]; s.background_gradient_angle = { unit: "deg", size: Number(o.gradiente[2] == null ? 180 : o.gradiente[2]) }; }
+      else if (o.fundo) { s.background_background = "classic"; s.background_color = o.fundo; }
+      if (o.imagem_fundo) { s.background_background = "classic"; s.background_image = { id: o.imagem_fundo.id || "", url: o.imagem_fundo.url || o.imagem_fundo }; s.background_size = "cover"; s.background_position = "center center"; }
+      if (o.padding != null) s.padding = Array.isArray(o.padding) ? quatro(o.padding) : quatro([o.padding, o.padding_lateral == null ? 20 : o.padding_lateral]);
+      if (o.borda_raio != null) s.border_radius = quatro(o.borda_raio);
+      if (o.borda) { s.border_border = "solid"; s.border_width = quatro(1); s.border_color = o.borda; }
+      if (o.sombra) { s.box_shadow_box_shadow_type = "yes"; s.box_shadow_box_shadow = sombra(o.sombra); }
+      if (o.altura_minima) s.min_height = px(o.altura_minima);
+      return s;
+    }
+    function escuro(cor){ var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(cor || "").trim()); if (!m) return false;
+      var h = m[1].length === 3 ? m[1].replace(/(.)/g, "$1$1") : m[1];
+      var r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+      return (0.299 * r + 0.587 * g + 0.114 * b) < 140; }
+    function widgetModel(w, ctx){
       var t = String(w.tipo || w.type || "").toLowerCase(), s;
+      // Sem cor informada, o Elementor usaria as cores globais do kit (ex.: azul #6EC1E4 nos títulos): usa preto/branco
+      // conforme o fundo da coluna/seção.
+      var dark = !!(ctx && ctx.escuro);
+      if (!w.cor && (t === "titulo" || t === "heading")) w = Object.assign({}, w, { cor: dark ? "#ffffff" : "#111111" });
+      if (!w.cor && (t === "texto" || t === "text")) w = Object.assign({}, w, { cor: dark ? "#d1d5db" : "#4b5563" });
+      if (t === "icone_caixa" || t === "icon-box") w = Object.assign({ cor_titulo: dark ? "#ffffff" : "#111111", cor_texto: dark ? "#d1d5db" : "#4b5563" }, w);
+      if ((t === "faq" || t === "toggle" || t === "accordion")) w = Object.assign({ cor_titulo: dark ? "#ffffff" : "#111111", cor_texto: dark ? "#d1d5db" : "#4b5563" }, w);
+      if ((t === "lista" || t === "icon-list") && !w.cor) w = Object.assign({}, w, { cor: dark ? "#e5e7eb" : "#374151" });
       if (t === "titulo" || t === "heading") {
-        s = limpa({ title: w.texto, header_size: w.nivel || "h2", align: alinha(w.alinhamento), title_color: w.cor });
-        if (w.tamanho) { s.typography_typography = "custom"; s.typography_font_size = px(w.tamanho); }
+        s = tipografia(limpa({ title: w.texto, header_size: w.nivel || "h2", align: alinha(w.alinhamento), title_color: w.cor }), w);
         return { elType: "widget", widgetType: "heading", settings: s };
       }
-      if (t === "texto" || t === "text") return { elType: "widget", widgetType: "text-editor", settings: limpa({ editor: w.html || ("<p>" + (w.texto || "") + "</p>"), align: alinha(w.alinhamento), text_color: w.cor }) };
-      if (t === "imagem" || t === "image") return { elType: "widget", widgetType: "image", settings: limpa({ image: { id: w.id || "", url: w.url || "", alt: w.alt || "" }, image_size: w.tamanho || "large", align: alinha(w.alinhamento) }) };
-      if (t === "botao" || t === "button") return { elType: "widget", widgetType: "button", settings: limpa({ text: w.texto, link: { url: w.link || "#", is_external: "", nofollow: "" }, align: alinha(w.alinhamento), background_color: w.cor_fundo, button_text_color: w.cor_texto, size: w.tamanho }) };
+      if (t === "texto" || t === "text") { s = tipografia(limpa({ editor: w.html || ("<p>" + (w.texto || "") + "</p>"), align: alinha(w.alinhamento), text_color: w.cor }), w); return { elType: "widget", widgetType: "text-editor", settings: s }; }
+      if (t === "imagem" || t === "image") {
+        s = limpa({ image: { id: w.id || "", url: w.url || "", alt: w.alt || "" }, image_size: w.tamanho || "full", align: alinha(w.alinhamento) });
+        if (w.largura) s.width = typeof w.largura === "string" && /%$/.test(w.largura) ? { unit: "%", size: parseFloat(w.largura) } : px(w.largura);
+        if (w.borda_raio != null) s.image_border_radius = quatro(w.borda_raio);
+        if (w.sombra) { s.image_box_shadow_box_shadow_type = "yes"; s.image_box_shadow_box_shadow = sombra(w.sombra); }
+        return { elType: "widget", widgetType: "image", settings: s };
+      }
+      if (t === "botao" || t === "button") {
+        s = tipografia(limpa({ text: w.texto, link: { url: w.link || "#", is_external: "", nofollow: "" }, align: alinha(w.alinhamento), background_color: w.cor_fundo, button_text_color: w.cor_texto, size: w.tamanho_botao }), w);
+        if (w.borda_raio != null) s.border_radius = quatro(w.borda_raio);
+        if (w.borda) { s.border_border = "solid"; s.border_width = quatro(1); s.border_color = w.borda; }
+        if (w.padding != null) s.text_padding = Array.isArray(w.padding) ? quatro(w.padding) : quatro([w.padding, w.padding * 2]);
+        if (w.cor_fundo_hover) s.button_background_hover_color = w.cor_fundo_hover;
+        return { elType: "widget", widgetType: "button", settings: s };
+      }
+      if (t === "icone_caixa" || t === "icon-box") {
+        s = limpa({ selected_icon: { value: w.icone || "fas fa-star", library: /^fab /.test(w.icone || "") ? "fa-brands" : "fa-solid" }, title_text: w.titulo, description_text: w.texto,
+          position: ({ topo: "top", esquerda: "left", direita: "right" })[w.posicao] || w.posicao || "top", text_align: alinha(w.alinhamento) || "left",
+          primary_color: w.cor_icone, title_color: w.cor_titulo, description_color: w.cor_texto, title_size: w.nivel || "h3" });
+        if (w.tamanho_icone) s.icon_size = px(w.tamanho_icone);
+        if (w.fundo_icone) { s.view = "stacked"; s.shape = w.forma_icone || "square"; s.primary_color = w.fundo_icone; s.secondary_color = w.cor_icone || "#ffffff"; }
+        if (w.tamanho_titulo) { s.title_typography_typography = "custom"; s.title_typography_font_size = px(w.tamanho_titulo); }
+        return { elType: "widget", widgetType: "icon-box", settings: s };
+      }
+      if (t === "faq" || t === "toggle" || t === "accordion") return { elType: "widget", widgetType: t === "accordion" ? "accordion" : "toggle", settings: limpa({
+        tabs: (w.itens || []).map(function(x, i){ return { _id: "gcf" + i + Math.random().toString(36).slice(2, 6), tab_title: x.pergunta || x.titulo || String(x), tab_content: x.resposta || x.texto || "" }; }),
+        title_color: w.cor_titulo, content_color: w.cor_texto }) };
+      if (t === "selo" || t === "badge") {
+        var cf = w.cor_fundo || "#f1f5f9", ct = w.cor_texto || "#111111";
+        return { elType: "widget", widgetType: "html", settings: { html: '<div style="text-align:' + (alinha(w.alinhamento) || "left") + '"><span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;font-size:' + (w.tamanho || 12) + 'px;font-weight:600;background:' + cf + ';color:' + ct + (w.borda ? ';border:1px solid ' + w.borda : '') + '">' + (w.texto || "") + '</span></div>' } };
+      }
       if (t === "espaco" || t === "spacer") return { elType: "widget", widgetType: "spacer", settings: { space: px(w.altura || 40) } };
       if (t === "divisor" || t === "divider") return { elType: "widget", widgetType: "divider", settings: limpa({ color: w.cor }) };
-      if (t === "lista" || t === "icon-list") return { elType: "widget", widgetType: "icon-list", settings: { icon_list: (w.itens || []).map(function(x, i){ return { _id: "gcf" + i + Math.random().toString(36).slice(2, 6), text: String(x), selected_icon: { value: w.icone || "fas fa-check", library: "fa-solid" } }; }) } };
+      if (t === "lista" || t === "icon-list") return { elType: "widget", widgetType: "icon-list", settings: limpa({ view: w.em_linha ? "inline" : undefined, icon_color: w.cor_icone, text_color: w.cor, icon_list: (w.itens || []).map(function(x, i){ return { _id: "gcf" + i + Math.random().toString(36).slice(2, 6), text: String(x), selected_icon: { value: w.icone || "fas fa-check", library: "fa-solid" } }; }) }) };
       if (t === "video") return { elType: "widget", widgetType: "video", settings: { youtube_url: w.url || "" } };
       if (t === "html") return { elType: "widget", widgetType: "html", settings: { html: w.html || "" } };
       if (t === "widget" && w.widgetType) return { elType: "widget", widgetType: w.widgetType, settings: w.settings || {} };
       return null;
+    }
+    function containersAtivo(){ var exp = (window.elementorCommon && elementorCommon.config && elementorCommon.config.experimentalFeatures) || {}; return !!exp.container; }
+    function colunaInfo(c){ return Array.isArray(c) ? { widgets: c } : (c || { widgets: [] }); }
+    // Cria a seção (e as colunas) e devolve os ids: { id, alvos: [ids das colunas], widgets: [listas] }.
+    function criarSecao(sec){
+      var root = elementor.getPreviewContainer(), containers = containersAtivo();
+      var cols = (sec.colunas && sec.colunas.length ? sec.colunas : [sec.widgets || []]).map(colunaInfo);
+      var st = caixa({}, sec), alvos = [];
+      if (containers) {
+        st.content_width = sec.largura === "total" ? "full" : "boxed";
+        if (sec.largura_max) st.boxed_width = px(sec.largura_max);
+        st.flex_direction = cols.length > 1 ? "row" : "column";
+        st.flex_direction_mobile = "column";
+        if (sec.gap != null) st.flex_gap = { unit: "px", size: Number(sec.gap), column: String(sec.gap), row: String(sec.gap), isLinked: true };
+        if (sec.alinhamento_vertical) st.flex_align_items = flexAlinha(sec.alinhamento_vertical);
+        if (sec.alinhamento) st.flex_justify_content = flexAlinha(sec.alinhamento);
+        var box = $e.run("document/elements/create", { container: root, model: { elType: "container", settings: st }, options: { edit: false } });
+        if (cols.length > 1) {
+          var gap = sec.gap != null ? Number(sec.gap) : 20;
+          cols.forEach(function(c){
+            var larg = c.largura || (100 / cols.length);
+            // Desconta a parte do espaço entre colunas (estimando ~1000 px de largura útil) para caberem na mesma linha.
+            var cs = caixa({ content_width: "full", flex_direction: "column", width: { unit: "%", size: Math.max(5, Math.round((larg - gap * (cols.length - 1) / cols.length / 10) * 10) / 10) }, width_mobile: { unit: "%", size: 100 } }, c);
+            if (c.alinhamento_vertical) cs.flex_justify_content = flexAlinha(c.alinhamento_vertical);
+            if (c.gap != null) cs.flex_gap = { unit: "px", size: Number(c.gap), column: String(c.gap), row: String(c.gap), isLinked: true };
+            alvos.push($e.run("document/elements/create", { container: box, model: { elType: "container", isInner: true, settings: cs }, options: { edit: false } }));
+          });
+        } else alvos.push(box);
+        return { id: box.id, alvos: alvos.map(function(x){ return x.id; }), widgets: cols.map(function(c){ return c.widgets || []; }), escuras: cols.map(function(c){ return fundoEscuro(c, sec); }) };
+      }
+      if (sec.largura === "total") st.layout = "full_width";
+      if (sec.largura_max) { st.content_width = px(sec.largura_max); }
+      if (sec.gap != null) st.gap = Number(sec.gap) >= 30 ? "wider" : Number(sec.gap) >= 20 ? "wide" : "default";
+      var secao = $e.run("document/elements/create", { container: root, model: { elType: "section", settings: st }, columns: cols.length, options: { edit: false } });
+      alvos = (secao.children || []).slice();
+      while (alvos.length < cols.length) alvos.push($e.run("document/elements/create", { container: secao, model: { elType: "column" }, options: { edit: false } }));
+      cols.forEach(function(c, i){
+        var cs = caixa({}, c);
+        if (c.largura) cs._inline_size = Number(c.largura);
+        if (Object.keys(cs).length) $e.run("document/elements/settings", { container: alvos[i], settings: cs, options: { external: true } });
+      });
+      return { id: secao.id, alvos: alvos.map(function(x){ return x.id; }), widgets: cols.map(function(c){ return c.widgets || []; }), escuras: cols.map(function(c){ return fundoEscuro(c, sec); }) };
+    }
+    function fundoEscuro(c, sec){
+      var cor = c.fundo || (c.gradiente && c.gradiente[0]) || ((c.imagem_fundo) ? "#000000" : null) || sec.fundo || (sec.gradiente && sec.gradiente[0]) || (sec.imagem_fundo ? "#000000" : "#ffffff");
+      return escuro(cor);
     }`;
 
   async function elementorTool(a = {}) {
@@ -717,59 +835,53 @@
         const settings = {};
         if (a.titulo) settings.post_title = String(a.titulo);
         if (a.ocultar_titulo != null) settings.hide_title = a.ocultar_titulo ? "yes" : "";
+        if (a.layout) settings.template = ({ padrao: "default", largura_total: "elementor_header_footer", canvas: "elementor_canvas" })[a.layout] || a.layout;
         pageEval(`(function(){ $e.run("document/elements/settings", { container: elementor.documents.getCurrent().container, settings: ${JSON.stringify(settings)}, options: { external: true } }); return "1"; })()`);
-        return { ok: true, titulo: a.titulo, ocultar_titulo: !!a.ocultar_titulo };
+        return { ok: true, titulo: a.titulo, ocultar_titulo: !!a.ocultar_titulo, layout: a.layout || undefined };
       }
       case "build": {
         let secoes = a.secoes;
         if (!secoes && a.secoes_json) { try { secoes = JSON.parse(a.secoes_json); } catch (e) { throw new Error("secoes_json não é um JSON válido: " + e.message); } }
         if (!Array.isArray(secoes) || !secoes.length) throw new Error("Informe secoes (lista de seções) ou secoes_json.");
-        const r = pageEval(`(function(){ ${EL_WIDGETS}
-          var secoes = ${JSON.stringify(secoes)}, acrescentar = ${JSON.stringify(a.modo === "acrescentar")};
-          var exp = (window.elementorCommon && elementorCommon.config && elementorCommon.config.experimentalFeatures) || {};
-          var containers = !!exp.container;
-          var root = elementor.getPreviewContainer();
-          if (!acrescentar) $e.run("document/elements/empty", { force: true });
-          var feito = { modo: containers ? "containers" : "secoes", secoes: 0, widgets: 0, ignorados: [] };
-          secoes.forEach(function(sec){
-            var cols = sec.colunas && sec.colunas.length ? sec.colunas : [sec.widgets || []];
-            var st = {};
-            if (sec.fundo) { st.background_background = "classic"; st.background_color = sec.fundo; }
-            if (sec.imagem_fundo) { st.background_background = "classic"; st.background_image = { id: sec.imagem_fundo.id || "", url: sec.imagem_fundo.url || sec.imagem_fundo }; st.background_size = "cover"; st.background_position = "center center"; }
-            if (sec.padding != null) st.padding = { unit: "px", top: String(sec.padding), right: "20", bottom: String(sec.padding), left: "20", isLinked: false };
-            if (sec.altura_minima) st.min_height = { unit: "px", size: Number(sec.altura_minima) };
-            var alvos = [];
-            if (containers) {
-              st.content_width = sec.largura === "total" ? "full" : "boxed";
-              st.flex_direction = cols.length > 1 ? "row" : "column";
-              st.flex_direction_mobile = "column";
-              if (sec.alinhamento_vertical === "centro") st.flex_justify_content = "center";
-              var box = $e.run("document/elements/create", { container: root, model: { elType: "container", settings: st }, options: { edit: false } });
-              if (cols.length > 1) cols.forEach(function(){
-                alvos.push($e.run("document/elements/create", { container: box, model: { elType: "container", isInner: true,
-                  settings: { content_width: "full", flex_direction: "column", width: { unit: "%", size: Math.floor(100 / cols.length) - 1 }, width_mobile: { unit: "%", size: 100 } } }, options: { edit: false } }));
-              });
-              else alvos.push(box);
-            } else {
-              var secao = $e.run("document/elements/create", { container: root, model: { elType: "section", settings: st }, columns: cols.length, options: { edit: false } });
-              alvos = (secao.children || []).slice();
-              while (alvos.length < cols.length) alvos.push($e.run("document/elements/create", { container: secao, model: { elType: "column" }, options: { edit: false } }));
+        // Monta BLOCO A BLOCO (seção, depois cada widget), como uma pessoa: com o "Gemini em Ação" ligado, o cursor
+        // verde vai até cada bloco recém-criado na pré-visualização do editor.
+        const feito = { modo: pageEval(`(function(){ ${EL_WIDGETS} return JSON.stringify(containersAtivo() ? "containers" : "secoes"); })()`), secoes: 0, widgets: 0, ignorados: [] };
+        if (a.modo !== "acrescentar") pageEval(`(function(){ $e.run("document/elements/empty", { force: true }); return "1"; })()`);
+        for (const sec of secoes) {
+          const r = pageEval(`(function(){ ${EL_WIDGETS} return JSON.stringify(criarSecao(${JSON.stringify(sec)})); })()`);
+          await mostrarBloco(r.id, false);
+          for (let i = 0; i < r.alvos.length; i++) {
+            for (const w of r.widgets[i] || []) {
+              const id = pageEval(`(function(){ ${EL_WIDGETS}
+                var m = widgetModel(${JSON.stringify(w)}, { escuro: ${JSON.stringify(!!(r.escuras && r.escuras[i]))} }); if (!m) return JSON.stringify(null);
+                var c = $e.run("document/elements/create", { container: elementor.getContainer(${JSON.stringify(r.alvos[i])}), model: m, options: { edit: false } });
+                return JSON.stringify(c && c.id); })()`);
+              if (!id) { feito.ignorados.push(w.tipo || w.type || "?"); continue; }
+              feito.widgets++;
+              await mostrarBloco(id, true);
             }
-            cols.forEach(function(lista, i){ (lista || []).forEach(function(w){
-              var m = widgetModel(w); if (!m) { feito.ignorados.push(w.tipo || w.type || "?"); return; }
-              $e.run("document/elements/create", { container: alvos[i], model: m, options: { edit: false } }); feito.widgets++;
-            }); });
-            feito.secoes++;
-          });
-          feito.elementosNoTopo = (root.children || []).length;
-          return JSON.stringify(feito); })()`);
-        return { ok: true, ...r, aviso: r.ignorados && r.ignorados.length ? "Widgets com tipo desconhecido foram ignorados: " + r.ignorados.join(", ") : undefined };
+          }
+          feito.secoes++;
+        }
+        feito.elementosNoTopo = pageEval(`JSON.stringify((elementor.getPreviewContainer().children || []).length)`);
+        return { ok: true, ...feito, aviso: feito.ignorados.length ? "Widgets com tipo desconhecido foram ignorados: " + feito.ignorados.join(", ") : undefined };
       }
       case "save": {
         const r = await pageJob(`
           var d = elementor.documents.getCurrent(), st = d.config && d.config.status && d.config.status.value;
-          if (st === "publish" || st === "future" || st === "private") throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Peça autorização ao usuário.");
-          await $e.run("document/save/draft");
+          var publicada = st === "publish" || st === "future" || st === "private";
+          if (publicada && !${a.atualizar_publicada ? "true" : "false"}) throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Pergunte ao usuário; se ele pedir, chame save com atualizar_publicada: true.");
+          // Publicada + autorizada: "Atualizar" (mantém publicada). Senão: rascunho.
+          // O Elementor recusa salvar enquanto o salvamento automático (disparado pela montagem) está em andamento:
+          // espera e tenta de novo.
+          for (var tent = 0; ; tent++) {
+            try { if (publicada) await $e.run("document/save/update"); else await $e.run("document/save/draft"); break; }
+            catch (e) {
+              var txt = e && e.message ? e.message : (function(){ try { return JSON.stringify(e); } catch (x) { return String(e); } })();
+              if (tent >= 30 || !/save progress|salvamento em andamento|in progress/i.test(String(txt))) throw e;
+              await new Promise(function(r){ setTimeout(r, 1000); });
+            }
+          }
           var c = d.config || {};
           return { id: c.id, status: (c.status && c.status.value) || "draft", preview: c.urls && (c.urls.wp_preview || c.urls.permalink),
             editar: location.href };`, 90000);
@@ -804,10 +916,37 @@
     };
   }
 
+  // Elementor: rola a pré-visualização até o bloco recém-criado e leva o cursor verde até ele (com o clique visual
+  // nos widgets). Sem o "Gemini em Ação" ligado, não espera nada.
+  async function mostrarBloco(id, clicar) {
+    if (!acao() || !id) return;
+    const fr = document.getElementById("elementor-preview-iframe");
+    let doc = null;
+    try { doc = fr && fr.contentDocument; } catch (_) { /* outro domínio */ }
+    const el = doc && doc.querySelector('[data-id="' + String(id).replace(/"/g, "") + '"]');
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    await new Promise(r => setTimeout(r, 60));
+    const fb = fr.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const x = fb.left + Math.min(Math.max(r.left + Math.min(r.width / 2, 120), 8), fb.width - 8);
+    const y = fb.top + Math.min(Math.max(r.top + Math.min(r.height / 2, 40), 8), fb.height - 8);
+    // Contorno verde no bloco, dentro da pré-visualização.
+    try {
+      const box = doc.createElement("div");
+      Object.assign(box.style, { position: "fixed", left: r.left - 2 + "px", top: r.top - 2 + "px", width: r.width + 4 + "px", height: r.height + 4 + "px",
+        border: "2px solid #22c55e", borderRadius: "4px", background: "rgba(34,197,94,0.08)", zIndex: 2147483647, pointerEvents: "none", transition: "opacity .5s" });
+      doc.documentElement.appendChild(box);
+      setTimeout(() => { box.style.opacity = "0"; }, 500);
+      setTimeout(() => box.remove(), 1100);
+    } catch (_) { /* sem contorno */ }
+    await apontar(x, y, clicar);
+  }
+
   // WordPress/Elementor trabalham pela API do editor (sem cliques): o cursor verde vai até a área de edição para
   // mostrar onde a página está sendo montada.
   async function apontarEditor(cmd, args) {
     if ((cmd !== "wordpress" && cmd !== "elementor") || !acao()) return;
+    if (/^(info|get_content|get_structure|preview|build)$/.test(args.acao || "") && cmd === "elementor") return;
     if (/^(info|get_content|get_structure|preview)$/.test(args.acao || "")) return;
     const area = document.querySelector("#elementor-preview-iframe, iframe[name=editor-canvas], .editor-styles-wrapper, .block-editor-writing-flow");
     if (!area || !isVisible(area)) return;

@@ -68,7 +68,7 @@ O painel existe só na aba em que você o abriu: ao trocar de aba ele não apare
 
 - `get_page` lista os elementos interativos visíveis com referências `[n]` (ex.: `[12] button "Curtir"`), mais URL, título e rolagem; opcionalmente o texto da página.
 - As ações usam essas referências. Um contorno verde pisca no elemento em que o Gemini age.
-- **Gemini em Ação**: enquanto o agente trabalha numa aba, a página ganha uma borda verde sutil e o aviso "Gemini em Ação" no topo; um cursor verde vai até cada elemento antes de clicar, digitar, escolher ou passar o mouse (com uma onda no clique). No WordPress/Elementor, que são montados pela API do editor, o cursor aponta a área de edição. Some sozinho ao fim da tarefa.
+- **Gemini em Ação**: enquanto o agente trabalha numa aba, a página ganha uma borda verde sutil e o aviso "Gemini em Ação" no topo; um cursor verde vai até cada elemento antes de clicar, digitar, escolher ou passar o mouse (com uma onda no clique). No Elementor a página é montada bloco a bloco: cada seção e cada widget aparece na pré-visualização com o cursor verde indo até ele. Some sozinho ao fim da tarefa.
 - `screenshot` captura a área visível (no modo conta Google a imagem é anexada no chat do Gemini; se o site não aceitar, ele segue só com `get_page`).
 
 ## Anexos
