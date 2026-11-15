@@ -38,7 +38,9 @@ Para lançar uma versão:
 2. Rode `powershell -ExecutionPolicy Bypass -File scripts\assinar-e-instalar.ps1` (sem `-Instalar`). Ele assina e atualiza a pasta `updates/` (o `.xpi` e o `updates.json` com o hash SHA-256; mantém as 5 últimas versões).
 3. Faça commit e push para a `main`. A partir daí, cada Firefox com a extensão instalada se atualiza na próxima verificação.
 
-O Firefox verifica atualizações de extensões a cada 24 h por padrão. Para verificar a cada 1 h, use `user_pref("extensions.update.interval", 3600);` no `user.js` do perfil. Para forçar na hora: `about:addons` → engrenagem → **Procurar atualizações**.
+O Firefox verifica atualizações de extensões a cada 24 h por padrão. Para receber a versão nova poucos minutos depois do push, use `user_pref("extensions.update.interval", 300);` no `user.js` do perfil (vale depois de reiniciar o Firefox). Menos de 5 min não adianta: o `raw.githubusercontent.com` guarda o `updates.json` em cache por 5 min (`max-age=300`). Para forçar na hora: `about:addons` → engrenagem → **Procurar atualizações**.
+
+A própria extensão não consegue disparar a verificação: `runtime.requestUpdateCheck` não existe no Firefox (só no Chrome).
 
 Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinstall.signatures.required = false` em `about:config`, instalando o `.zip` de `web-ext-artifacts/` em `about:addons` → engrenagem → *Instalar extensão de um arquivo*.
 

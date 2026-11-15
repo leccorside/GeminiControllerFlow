@@ -11,6 +11,13 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — atualização poucos minutos depois do push
+
+- Pedido: a extensão procurar atualização sozinha logo depois do push. **Não é possível pela extensão**: `runtime.requestUpdateCheck` não existe no Firefox (MDN browser-compat-data: `version_added: false`). Instalar o `.xpi` por conta própria exigiria o clique em "Adicionar".
+- Solução: `extensions.update.interval` no `user.js` do perfil passou de 3600 para **300** (5 min). Menos que isso não adianta: o `raw.githubusercontent.com` responde com `Cache-Control: max-age=300`. Na prática, a versão nova entra entre ~5 e ~10 min depois do push, sem clique. O Firefox lê o intervalo só na inicialização: é preciso reiniciá-lo uma vez.
+- Diagnóstico anterior (1.0.8 "não atualizou"): a verificação do Firefox rodou às 21:47:54 e o commit foi às 21:47:58 — a checagem aconteceu 4 s antes do push; nada estava quebrado.
+- Sem mudança de código nem de versão da extensão.
+
 ### 14/11/2026 — versão 1.0.8 (nível de raciocínio no seletor)
 
 - Seletor no estilo do Antigravity: o botão mostra modelo + nível ("Gemini 4 Argon Medium"); cada modelo mostra o nível ao lado do nome e, quando há níveis, um **›** que abre a lista "Nível de raciocínio" com ✓ no nível em uso. Clicar no modelo mantém o nível; clicar num nível troca modelo + nível.
