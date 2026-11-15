@@ -1,7 +1,19 @@
 // Cliente mínimo da API do Gemini (Google AI Studio / generativelanguage.googleapis.com).
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-async function geminiGenerate({ apiKey, model, systemInstruction, contents, tools, signal }) {
+// Nível de raciocínio ("low" | "medium" | "high"; vazio = padrão do modelo) -> thinkingConfig.
+// Gemini 3+ usa thinkingLevel; a família 2.5 usa thinkingBudget (tokens).
+function thinkingConfigFor(model, level) {
+  if (!level) return null;
+  const m = String(model).toLowerCase();
+  if (/gemini-2\.5|gemini-2\.0/.test(m)) {
+    const budget = { low: 1024, medium: 8192, high: 24576 }[level];
+    return budget ? { thinkingBudget: budget } : null;
+  }
+  return { thinkingLevel: level };
+}
+
+async function geminiGenerate({ apiKey, model, systemInstruction, contents, tools, signal, thinkingLevel }) {
   const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
   const body = {
     systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -10,6 +22,9 @@ async function geminiGenerate({ apiKey, model, systemInstruction, contents, tool
     toolConfig: { functionCallingConfig: { mode: "AUTO" } },
     generationConfig: { temperature: 0.4 }
   };
+  const tc = thinkingConfigFor(model, thinkingLevel);
+  if (tc) body.generationConfig.thinkingConfig = tc;
+  let droppedThinking = false;
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, {
       method: "POST",
@@ -21,6 +36,12 @@ async function geminiGenerate({ apiKey, model, systemInstruction, contents, tool
     const text = await res.text();
     let msg = text;
     try { msg = JSON.parse(text).error?.message || text; } catch (_) { /* texto puro */ }
+    // Modelo sem suporte ao nível pedido: tenta de novo sem thinkingConfig (usa o padrão do modelo).
+    if (res.status === 400 && !droppedThinking && body.generationConfig.thinkingConfig && /think/i.test(msg)) {
+      delete body.generationConfig.thinkingConfig;
+      droppedThinking = true;
+      continue;
+    }
     if ((res.status === 429 || res.status === 503 || res.status === 500) && attempt < 2) {
       await new Promise(r => setTimeout(r, 2500 * (attempt + 1)));
       continue;

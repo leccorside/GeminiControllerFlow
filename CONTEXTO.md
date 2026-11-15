@@ -11,6 +11,15 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.8 (nível de raciocínio no seletor)
+
+- Seletor no estilo do Antigravity: o botão mostra modelo + nível ("Gemini 4 Argon Medium"); cada modelo mostra o nível ao lado do nome e, quando há níveis, um **›** que abre a lista "Nível de raciocínio" com ✓ no nível em uso. Clicar no modelo mantém o nível; clicar num nível troca modelo + nível.
+- **Modo API**: níveis Automático / Low / Medium / High (nomes em inglês como no Antigravity; "Automático" traduzido), salvos em `apiLevel` e enviados em `generationConfig.thinkingConfig` — `thinkingLevel` para Gemini 3+ e `thinkingBudget` (1024 / 8192 / 24576) para 2.0/2.5. Se a API recusar (400 citando "think"), repete sem `thinkingConfig`.
+- **Modo conta Google**: o gemini.google.com **não tem** controle de nível sem login (inspecionado no Edge headless: só os 4 modelos e, no menu de ferramentas, arquivos/imagem/vídeo/Canva). A ponte detecta submenu em um item (`aria-haspopup="true"` ou ícone `chevron_right`/`arrow_right`…), abre por hover (ou clique, se `aria-haspopup`), lê os níveis e escolhe; o `status` devolve `nivel`. Salvo em `webLevel` e reaplicado em conversa nova. Se o Gemini da conta não oferecer submenu, aparece só o modelo.
+- **Testes**: ponte no Gemini real — sem submenu, lista igual à 1.0.7; com um submenu simulado (Medium marcado / High) num item, leu `nivel: Medium`, escolheu High (clique confirmado), `status` devolveu `nivel: High` e o menu fechou. UI renderizada no Edge headless com a API do navegador simulada: botão "Gemini 4 Argon Medium", submenu de níveis aberto, sem erros de JavaScript.
+- **Pendente**: confirmar no Firefox do usuário, com a conta logada, se o Gemini oferece submenu de nível em algum modelo (e o formato dele).
+- Lição: heredoc no Bash deste ambiente perde barras invertidas (`\s`, `\\`) — para código com regex, gravar arquivo com Write/Edit.
+
 ### 14/11/2026 — versão 1.0.7 (correção do seletor de modelo)
 
 - **Erro**: na 1.0.6 o menu mostrava "Não consegui listar os modelos: O menu de modelos do Gemini não abriu." A ponte procurava os itens dentro de `.cdk-overlay-container`, mas o Gemini renderiza o menu em `gem-menu[role=menu]` (ligado ao botão por `aria-controls`), fora do overlay.

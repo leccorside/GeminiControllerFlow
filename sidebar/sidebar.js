@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 
 const GEMINI_URL = "https://gemini.google.com/app";
-const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", webModel: "", confirmMode: "js", maxSteps: 40 };
+const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", apiLevel: "", webModel: "", webLevel: "", confirmMode: "js", maxSteps: 40 };
 let settings = { ...DEFAULTS };
 let windowId = null;
 let runner = null;
@@ -110,7 +110,11 @@ function updateBadge() {
 }
 
 function applyStatus(st) {
-  if (st && st.modelo) { webModelCurrent = st.modelo; updateModelPicker(); }
+  if (st && st.modelo) {
+    webModelCurrent = st.modelo;
+    if (st.nivel) webLevelCurrent = st.nivel;
+    updateModelPicker();
+  }
   const conta = st && st.conta ? st.conta : null;
   if (JSON.stringify(conta) !== JSON.stringify(lastAccount)) {
     lastAccount = conta;
@@ -156,7 +160,9 @@ async function saveSettings() {
     model: $("model").value.trim() || DEFAULTS.model,
     confirmMode: $("confirmMode").value,
     maxSteps: Math.min(Math.max(Number($("maxSteps").value) || DEFAULTS.maxSteps, 5), 200),
-    webModel: settings.webModel || ""
+    webModel: settings.webModel || "",
+    webLevel: settings.webLevel || "",
+    apiLevel: settings.apiLevel || ""
   };
   apiModelsCache = null;
   await browser.storage.local.set(settings);
@@ -394,6 +400,7 @@ async function runApi(userText, ctx) {
         systemInstruction: API_SYSTEM_PROMPT(),
         contents: buildContents(),
         tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
+        thinkingLevel: settings.apiLevel,
         signal: abort.signal
       });
     } finally { thinking.remove(); }
@@ -492,7 +499,7 @@ async function runWeb(userText, ctx) {
   const st = applyStatus(await ensureGeminiTab({ fresh: webFresh }));
   // Conversa nova: reaplica o modelo escolhido pelo usuário, se o Gemini abriu com outro.
   if (freshChat && settings.webModel && !(st.modelo || "").toLowerCase().includes(settings.webModel.toLowerCase())) {
-    const r = await bridge("select_model", { nome: settings.webModel }).catch(() => null);
+    const r = await bridge("select_model", settings.webLevel ? { nome: settings.webModel, nivel: settings.webLevel } : { nome: settings.webModel }).catch(() => null);
     if (r && r.atual) { webModelCurrent = r.atual; updateModelPicker(); }
   }
   if (webFresh && !st.logado) {
@@ -573,16 +580,33 @@ async function runAgent(userText) {
 }
 
 
-// ---------- Seletor de modelo ----------
+// ---------- Seletor de modelo (com nível de raciocínio) ----------
 let webModelCurrent = null;   // nome do modelo atual lido do gemini.google.com
+let webLevelCurrent = null;   // nível atual no Gemini web (se o menu do Gemini oferecer)
 let apiModelsCache = null;    // lista de modelos da API (carregada sob demanda)
 
+// Níveis da API (thinkingConfig). Os nomes ficam em inglês, como no Antigravity; "Auto" é traduzido.
+const API_LEVELS = () => [
+  { id: "", nome: t("levelAuto") },
+  { id: "low", nome: "Low" },
+  { id: "medium", nome: "Medium" },
+  { id: "high", nome: "High" }
+];
+const apiLevelName = id => (API_LEVELS().find(l => l.id === (id || "")) || API_LEVELS()[0]).nome;
+
 function updateModelPicker() {
-  const label = settings.engine === "web"
-    ? (webModelCurrent || settings.webModel || t("modelDefault"))
-    : settings.model;
-  $("modelPickerLabel").textContent = label;
-  $("modelPicker").title = `${t("modelPickerTitle")}: ${label}`;
+  let name, level;
+  if (settings.engine === "web") {
+    name = webModelCurrent || settings.webModel || t("modelDefault");
+    level = webLevelCurrent || settings.webLevel || "";
+  } else {
+    name = settings.model;
+    level = settings.apiLevel ? apiLevelName(settings.apiLevel) : "";
+  }
+  $("modelPickerLabel").textContent = name;
+  $("modelPickerLevel").textContent = level;
+  $("modelPickerLevel").hidden = !level;
+  $("modelPicker").title = `${t("modelPickerTitle")}: ${name}${level ? " " + level : ""}`;
 }
 
 function closeModelMenu() { $("modelMenu").hidden = true; }
@@ -593,23 +617,55 @@ function modelMenuStatus(text) {
   $("modelList2").replaceChildren(d);
 }
 
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// m: { nome, descricao, selo, selecionado, desabilitado, nivel, nivelId, niveis: [{ id?, nome, selecionado, desabilitado }] }
 function renderModelItems(items) {
   if (!items.length) { modelMenuStatus(t("modelNone")); return; }
-  $("modelList2").replaceChildren(...items.map(m => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "model-item"; b.disabled = !!m.desabilitado;
+  const rows = [];
+  for (const m of items) {
+    const row = el("div", "model-row");
+    const b = el("button", "model-item");
+    b.type = "button"; b.disabled = !!m.desabilitado;
     b.setAttribute("role", "option"); b.setAttribute("aria-selected", m.selecionado ? "true" : "false");
-    const check = document.createElement("span"); check.className = "mi-check"; check.textContent = m.selecionado ? "✓" : "";
-    const txt = document.createElement("span"); txt.className = "mi-text";
-    const name = document.createElement("span"); name.className = "mi-name"; name.textContent = m.nome;
-    if (m.selo) { const bd = document.createElement("span"); bd.className = "mi-badge"; bd.textContent = m.selo; name.appendChild(bd); }
-    if (m.desabilitado) { const lk = document.createElement("span"); lk.className = "mi-lock"; lk.textContent = "🔒"; lk.title = t("modelLocked"); name.appendChild(lk); }
+    const txt = el("span", "mi-text");
+    const name = el("span", "mi-name", m.nome);
+    if (m.nivel) name.appendChild(el("span", "mi-level", m.nivel));
+    if (m.selo) name.appendChild(el("span", "mi-badge", m.selo));
+    if (m.desabilitado) { const lk = el("span", "mi-lock", "🔒"); lk.title = t("modelLocked"); name.appendChild(lk); }
     txt.appendChild(name);
-    if (m.descricao) { const d = document.createElement("span"); d.className = "mi-desc"; d.textContent = m.descricao; txt.appendChild(d); }
-    b.append(txt, check);
-    b.onclick = () => chooseModel(m);
-    return b;
-  }));
+    if (m.descricao) txt.appendChild(el("span", "mi-desc", m.descricao));
+    b.append(txt, el("span", "mi-check", m.selecionado ? "✓" : ""));
+    b.onclick = () => chooseModel(m, m.nivelId ?? null);
+    row.appendChild(b);
+
+    if (m.niveis && m.niveis.length && !m.desabilitado) {
+      const chev = el("button", "mi-chevron", "›");
+      chev.type = "button"; chev.title = t("levelTitle"); chev.setAttribute("aria-expanded", "false");
+      const sub = el("div", "model-levels"); sub.hidden = true;
+      sub.appendChild(el("div", "model-levels-title", t("levelTitle")));
+      for (const lv of m.niveis) {
+        const lb = el("button", "level-item");
+        lb.type = "button"; lb.disabled = !!lv.desabilitado;
+        lb.append(el("span", "", lv.nome), el("span", "mi-check", lv.selecionado && m.selecionado ? "✓" : ""));
+        lb.onclick = () => chooseModel(m, lv.id ?? lv.nome);
+        sub.appendChild(lb);
+      }
+      chev.onclick = () => {
+        sub.hidden = !sub.hidden;
+        chev.setAttribute("aria-expanded", String(!sub.hidden));
+        chev.classList.toggle("open", !sub.hidden);
+      };
+      row.append(chev, sub);
+    }
+    rows.push(row);
+  }
+  $("modelList2").replaceChildren(...rows);
 }
 
 async function openModelMenu() {
@@ -621,34 +677,54 @@ async function openModelMenu() {
       await ensureGeminiTab({});
       const res = await bridge("list_models");
       if (!res || res.erro) throw new Error(res ? res.erro : t("geminiTabGone"));
-      if (res.atual) { webModelCurrent = res.atual; updateModelPicker(); }
+      if (res.atual) webModelCurrent = res.atual;
+      const sel = (res.modelos || []).find(m => m.selecionado);
+      webLevelCurrent = sel && sel.nivel ? sel.nivel : null;
+      updateModelPicker();
       renderModelItems(res.modelos || []);
     } else {
       if (!settings.apiKey) { modelMenuStatus(t("modelNeedKey")); return; }
       if (!apiModelsCache) apiModelsCache = await geminiListModels(settings.apiKey);
-      renderModelItems(apiModelsCache.map(m => ({ nome: m.id, descricao: m.nome, selecionado: m.id === settings.model })));
+      renderModelItems(apiModelsCache.map(m => {
+        const atual = m.id === settings.model;
+        return {
+          nome: m.id, descricao: m.nome, selecionado: atual,
+          nivel: atual && settings.apiLevel ? apiLevelName(settings.apiLevel) : "",
+          nivelId: atual ? settings.apiLevel : null,
+          niveis: API_LEVELS().map(l => ({ id: l.id, nome: l.nome, selecionado: atual && l.id === (settings.apiLevel || "") }))
+        };
+      }));
     }
   } catch (e) {
     modelMenuStatus(t("modelListError", { e: e.message || String(e) }));
   }
 }
 
-async function chooseModel(m) {
+// nivel: null = manter o nível atual; "" = automático (API); outro = id/nome do nível.
+async function chooseModel(m, nivel) {
   closeModelMenu();
   try {
+    let label;
     if (settings.engine === "web") {
-      const res = await bridge("select_model", { nome: m.nome });
+      const args = { nome: m.nome };
+      if (nivel) args.nivel = nivel;
+      const res = await bridge("select_model", args);
       if (!res || res.erro) throw new Error(res ? res.erro : t("geminiTabGone"));
       webModelCurrent = res.atual || m.nome;
+      webLevelCurrent = res.nivel || null;
       settings.webModel = m.nome;
+      settings.webLevel = res.nivel || "";
+      label = webModelCurrent + (webLevelCurrent ? " " + webLevelCurrent : "");
     } else {
       settings.model = m.nome;
       $("model").value = m.nome;
+      if (nivel !== null && nivel !== undefined) settings.apiLevel = nivel;
+      label = m.nome + (settings.apiLevel ? " " + apiLevelName(settings.apiLevel) : "");
     }
-    await browser.storage.local.set({ webModel: settings.webModel, model: settings.model });
+    await browser.storage.local.set({ webModel: settings.webModel, webLevel: settings.webLevel, model: settings.model, apiLevel: settings.apiLevel });
     updateModelPicker();
     updateBadge();
-    addEl("msg note", null, t("modelChanged", { m: m.nome }));
+    addEl("msg note", null, t("modelChanged", { m: label }));
   } catch (e) {
     addEl("msg error", null, t("modelError", { e: e.message || String(e) }));
   }

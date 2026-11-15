@@ -100,7 +100,9 @@ const I18N = {
     modelListError: "Não consegui listar os modelos: {e}",
     modelNeedKey: "Configure a chave da API para listar os modelos.",
     modelDefault: "Gemini",
-    modelLocked: "Bloqueado nesta conta (faça login ou verifique o plano)"
+    modelLocked: "Bloqueado nesta conta (faça login ou verifique o plano)",
+    levelAuto: "Automático",
+    levelTitle: "Nível de raciocínio"
   },
 
   en: {
@@ -192,7 +194,9 @@ const I18N = {
     modelListError: "Could not list the models: {e}",
     modelNeedKey: "Set the API key to list the models.",
     modelDefault: "Gemini",
-    modelLocked: "Locked for this account (sign in or check your plan)"
+    modelLocked: "Locked for this account (sign in or check your plan)",
+    levelAuto: "Auto",
+    levelTitle: "Reasoning level"
   },
 
   es: {
@@ -284,7 +288,9 @@ const I18N = {
     modelListError: "No pude listar los modelos: {e}",
     modelNeedKey: "Configura la clave de API para listar los modelos.",
     modelDefault: "Gemini",
-    modelLocked: "Bloqueado en esta cuenta (inicia sesión o revisa tu plan)"
+    modelLocked: "Bloqueado en esta cuenta (inicia sesión o revisa tu plan)",
+    levelAuto: "Automático",
+    levelTitle: "Nivel de razonamiento"
   }
 };
 

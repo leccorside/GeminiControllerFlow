@@ -185,16 +185,68 @@
     return txt;
   }
 
+  // ---- Nível de raciocínio (submenu do item, se o Gemini oferecer) ----
+  // Sem login o menu não tem submenu; com conta, alguns modelos podem ter um submenu de nível (ex.: Medium/High).
+  const SUB_ICONS = /^(chevron_right|arrow_right|keyboard_arrow_right|arrow_forward_ios|navigate_next)$/;
+  function hasSubmenu(el) {
+    if (el.getAttribute("aria-haspopup") === "true") return true;
+    return [...el.querySelectorAll("mat-icon")].some(i => SUB_ICONS.test(i.getAttribute("data-mat-icon-name") || i.getAttribute("fonticon") || clean(i.textContent)));
+  }
+
+  const visibleMenus = () => [...document.querySelectorAll("gem-menu[role=menu], [role=menu]")]
+    .filter(m => m.getBoundingClientRect().height > 0);
+
+  async function openSubmenu(el, mainMenu) {
+    const known = new Set(visibleMenus());
+    known.add(mainMenu);
+    const r = el.getBoundingClientRect();
+    const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    for (const ty of ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"]) {
+      el.dispatchEvent(new (ty.startsWith("pointer") ? PointerEvent : MouseEvent)(ty, opts));
+    }
+    let sub = null;
+    for (let i = 0; i < 10 && !sub; i++) { await sleep(100); sub = visibleMenus().find(m => !known.has(m)); }
+    if (!sub && el.getAttribute("aria-haspopup") === "true") {
+      (el.querySelector("gem-menu-item-content") || el).click();
+      for (let i = 0; i < 10 && !sub; i++) { await sleep(100); sub = visibleMenus().find(m => !known.has(m)); }
+    }
+    return sub;
+  }
+
+  function levelItems(sub) {
+    return [...sub.querySelectorAll("[role=menuitemradio], [role=menuitem], gem-menu-item")].map(it => ({
+      el: it,
+      nome: clean(it.querySelector(".label")?.textContent) || clean(it.innerText || it.textContent),
+      selecionado: it.getAttribute("aria-checked") === "true" || it.getAttribute("data-active") === "true",
+      desabilitado: it.getAttribute("aria-disabled") === "true"
+    })).filter(l => l.nome);
+  }
+
   async function listModels() {
     const { btn, items } = await openMenu();
-    const modelos = items.map(describeItem).filter(m => m.nome);
+    const mainMenu = menuEl(btn);
+    const modelos = [];
+    for (const it of items) {
+      const d = describeItem(it);
+      if (!d.nome) continue;
+      if (!d.desabilitado && hasSubmenu(it)) {
+        try {
+          const sub = await openSubmenu(it, mainMenu);
+          if (sub) {
+            d.niveis = levelItems(sub).map(({ nome, selecionado, desabilitado }) => ({ nome, selecionado, desabilitado }));
+            d.nivel = (d.niveis.find(l => l.selecionado) || {}).nome || "";
+          }
+        } catch (_) { /* sem submenu legível */ }
+      }
+      modelos.push(d);
+    }
     await closeMenu(btn);
     const sel = modelos.find(m => m.selecionado);
-    if (sel) lastSelected = { nome: sel.nome, botao: buttonText() };
+    if (sel) lastSelected = { nome: sel.nome, nivel: sel.nivel || "", botao: buttonText() };
     return { atual: currentModel(), modelos };
   }
 
-  async function selectModel({ nome }) {
+  async function selectModel({ nome, nivel }) {
     const alvo = clean(nome).toLowerCase();
     const { btn, items } = await openMenu();
     const match = el => {
@@ -206,12 +258,23 @@
     if (!item) { await closeMenu(btn); throw new Error(`Modelo "${nome}" não encontrado no menu do Gemini.`); }
     const d = describeItem(item);
     if (d.desabilitado) { await closeMenu(btn); throw new Error(`O modelo "${d.nome}" está bloqueado nesta conta (faça login ou verifique o plano).`); }
-    const alvoEl = item.querySelector("gem-menu-item-content") || item;
-    alvoEl.click();
+    let nivelEscolhido = "";
+    if (nivel && hasSubmenu(item)) {
+      const sub = await openSubmenu(item, menuEl(btn));
+      const niveis = sub ? levelItems(sub) : [];
+      const n = clean(nivel).toLowerCase();
+      const lv = niveis.find(l => l.nome.toLowerCase() === n) || niveis.find(l => l.nome.toLowerCase().includes(n));
+      if (!lv) { await closeMenu(btn); throw new Error(`Nível "${nivel}" não encontrado para ${d.nome}.`); }
+      if (lv.desabilitado) { await closeMenu(btn); throw new Error(`O nível "${lv.nome}" está bloqueado nesta conta.`); }
+      (lv.el.querySelector("gem-menu-item-content") || lv.el).click();
+      nivelEscolhido = lv.nome;
+    } else {
+      (item.querySelector("gem-menu-item-content") || item).click();
+    }
     for (let i = 0; i < 20 && btn.getAttribute("aria-expanded") === "true"; i++) await sleep(100);
     if (btn.getAttribute("aria-expanded") === "true") await closeMenu(btn);
-    lastSelected = { nome: d.nome, botao: buttonText() };
-    return { ok: true, atual: d.nome };
+    lastSelected = { nome: d.nome, nivel: nivelEscolhido, botao: buttonText() };
+    return { ok: true, atual: d.nome, nivel: nivelEscolhido };
   }
 
   let stopRequested = false;
@@ -280,7 +343,8 @@
       case "ping": return Promise.resolve({ ok: true });
       case "status": {
         const conta = account();
-        return Promise.resolve({ ok: true, pronto: !!editor(), logado: !!conta || isLoggedIn(), conta, modelo: currentModel(), url: location.href });
+        return Promise.resolve({ ok: true, pronto: !!editor(), logado: !!conta || isLoggedIn(), conta, modelo: currentModel(),
+          nivel: lastSelected && lastSelected.botao === buttonText() ? lastSelected.nivel || "" : "", url: location.href });
       }
       case "list_models": return listModels().catch(e => ({ erro: e.message || String(e) }));
       case "select_model": return selectModel(msg.args || {}).catch(e => ({ erro: e.message || String(e) }));

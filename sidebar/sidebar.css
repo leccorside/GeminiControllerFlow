@@ -164,6 +164,24 @@ a { color: var(--accent-2); }
   color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); vertical-align: 1px;
 }
 .model-item .mi-lock { margin-left: 6px; font-size: 11px; }
+.model-item .mi-level { margin-left: 6px; font-size: 12px; color: var(--muted); }
+.picker-level { color: var(--muted); }
+.model-row { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+.model-row .model-levels { grid-column: 1 / -1; }
+.mi-chevron {
+  border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1;
+  width: 26px; height: 30px; margin-top: 3px; border-radius: 6px; transition: transform .15s ease;
+}
+.mi-chevron:hover { background: var(--bg-soft); color: var(--text); }
+.mi-chevron.open { transform: rotate(90deg); }
+.model-levels { margin: 0 6px 6px 22px; padding: 4px; border-left: 2px solid var(--border); }
+.model-levels-title { font-size: 11px; color: var(--muted); padding: 2px 8px 4px; }
+.level-item {
+  display: flex; justify-content: space-between; width: 100%; border: 0; background: transparent;
+  border-radius: 6px; padding: 5px 8px; font-size: 12.5px; text-align: left;
+}
+.level-item:hover:not(:disabled) { background: var(--bg-soft); }
+.level-item:disabled { opacity: .45; cursor: default; }
 .model-item .mi-check { flex: none; width: 14px; color: var(--accent); }
 .model-status { font-size: 12px; color: var(--muted); padding: 6px 8px; }
 .send:disabled { opacity: .4; cursor: default; }
