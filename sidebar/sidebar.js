@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 
 const GEMINI_URL = "https://gemini.google.com/app";
-const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", confirmMode: "js", maxSteps: 40 };
+const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", webModel: "", confirmMode: "js", maxSteps: 40 };
 let settings = { ...DEFAULTS };
 let windowId = null;
 let runner = null;
@@ -110,6 +110,7 @@ function updateBadge() {
 }
 
 function applyStatus(st) {
+  if (st && st.modelo) { webModelCurrent = st.modelo; updateModelPicker(); }
   const conta = st && st.conta ? st.conta : null;
   if (JSON.stringify(conta) !== JSON.stringify(lastAccount)) {
     lastAccount = conta;
@@ -154,14 +155,17 @@ async function saveSettings() {
     apiKey: $("apiKey").value.trim(),
     model: $("model").value.trim() || DEFAULTS.model,
     confirmMode: $("confirmMode").value,
-    maxSteps: Math.min(Math.max(Number($("maxSteps").value) || DEFAULTS.maxSteps, 5), 200)
+    maxSteps: Math.min(Math.max(Number($("maxSteps").value) || DEFAULTS.maxSteps, 5), 200),
+    webModel: settings.webModel || ""
   };
+  apiModelsCache = null;
   await browser.storage.local.set(settings);
   if (langChanged) {
     setLang(settings.lang);
     retranslate();
   }
   updateBadge();
+  updateModelPicker();
   toggleSettings(false);
   if (engineChanged) newChat();
   else if (langChanged) addEl("msg note", null, t("savedLanguage"));
@@ -262,6 +266,8 @@ function setBusy(v) {
   busy = v;
   $("btnSend").hidden = v;
   $("btnStop").hidden = !v;
+  $("modelPicker").disabled = v;
+  if (v) closeModelMenu();
 }
 
 async function updateTabContext() {
@@ -303,6 +309,7 @@ function renderEmpty() {
 // Retraduz tudo o que já está na tela depois de trocar o idioma.
 function retranslate() {
   applyI18n();
+  updateModelPicker();
   refreshEngineFields();
   updateBadge();
   if ($("empty")) renderEmpty();
@@ -481,7 +488,13 @@ function compact(obj, max = 20000) {
 }
 
 async function runWeb(userText, ctx) {
+  const freshChat = webFresh;
   const st = applyStatus(await ensureGeminiTab({ fresh: webFresh }));
+  // Conversa nova: reaplica o modelo escolhido pelo usuário, se o Gemini abriu com outro.
+  if (freshChat && settings.webModel && !(st.modelo || "").toLowerCase().includes(settings.webModel.toLowerCase())) {
+    const r = await bridge("select_model", { nome: settings.webModel }).catch(() => null);
+    if (r && r.atual) { webModelCurrent = r.atual; updateModelPicker(); }
+  }
   if (webFresh && !st.logado) {
     addEl("msg error", null, t("notLoggedIn"));
   }
@@ -559,6 +572,91 @@ async function runAgent(userText) {
   }
 }
 
+
+// ---------- Seletor de modelo ----------
+let webModelCurrent = null;   // nome do modelo atual lido do gemini.google.com
+let apiModelsCache = null;    // lista de modelos da API (carregada sob demanda)
+
+function updateModelPicker() {
+  const label = settings.engine === "web"
+    ? (webModelCurrent || settings.webModel || t("modelDefault"))
+    : settings.model;
+  $("modelPickerLabel").textContent = label;
+  $("modelPicker").title = `${t("modelPickerTitle")}: ${label}`;
+}
+
+function closeModelMenu() { $("modelMenu").hidden = true; }
+
+function modelMenuStatus(text) {
+  const d = document.createElement("div");
+  d.className = "model-status"; d.textContent = text;
+  $("modelList2").replaceChildren(d);
+}
+
+function renderModelItems(items) {
+  if (!items.length) { modelMenuStatus(t("modelNone")); return; }
+  $("modelList2").replaceChildren(...items.map(m => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "model-item"; b.disabled = !!m.desabilitado;
+    b.setAttribute("role", "option"); b.setAttribute("aria-selected", m.selecionado ? "true" : "false");
+    const check = document.createElement("span"); check.className = "mi-check"; check.textContent = m.selecionado ? "✓" : "";
+    const txt = document.createElement("span"); txt.className = "mi-text";
+    const name = document.createElement("span"); name.className = "mi-name"; name.textContent = m.nome;
+    txt.appendChild(name);
+    if (m.descricao) { const d = document.createElement("span"); d.className = "mi-desc"; d.textContent = m.descricao; txt.appendChild(d); }
+    b.append(txt, check);
+    b.onclick = () => chooseModel(m);
+    return b;
+  }));
+}
+
+async function openModelMenu() {
+  if (!$("modelMenu").hidden) { closeModelMenu(); return; }
+  $("modelMenu").hidden = false;
+  modelMenuStatus(t("modelLoading"));
+  try {
+    if (settings.engine === "web") {
+      await ensureGeminiTab({});
+      const res = await bridge("list_models");
+      if (!res || res.erro) throw new Error(res ? res.erro : t("geminiTabGone"));
+      if (res.atual) { webModelCurrent = res.atual; updateModelPicker(); }
+      renderModelItems(res.modelos || []);
+    } else {
+      if (!settings.apiKey) { modelMenuStatus(t("modelNeedKey")); return; }
+      if (!apiModelsCache) apiModelsCache = await geminiListModels(settings.apiKey);
+      renderModelItems(apiModelsCache.map(m => ({ nome: m.id, descricao: m.nome, selecionado: m.id === settings.model })));
+    }
+  } catch (e) {
+    modelMenuStatus(t("modelListError", { e: e.message || String(e) }));
+  }
+}
+
+async function chooseModel(m) {
+  closeModelMenu();
+  try {
+    if (settings.engine === "web") {
+      const res = await bridge("select_model", { nome: m.nome });
+      if (!res || res.erro) throw new Error(res ? res.erro : t("geminiTabGone"));
+      webModelCurrent = res.atual || m.nome;
+      settings.webModel = m.nome;
+    } else {
+      settings.model = m.nome;
+      $("model").value = m.nome;
+    }
+    await browser.storage.local.set({ webModel: settings.webModel, model: settings.model });
+    updateModelPicker();
+    updateBadge();
+    addEl("msg note", null, t("modelChanged", { m: m.nome }));
+  } catch (e) {
+    addEl("msg error", null, t("modelError", { e: e.message || String(e) }));
+  }
+}
+
+$("modelPicker").addEventListener("click", e => { e.stopPropagation(); openModelMenu(); });
+$("modelMenu").addEventListener("click", e => e.stopPropagation());
+document.addEventListener("click", closeModelMenu);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModelMenu(); });
+
 // ---------- Eventos ----------
 function send() {
   const input = $("input");
@@ -615,6 +713,7 @@ browser.tabs.onRemoved.addListener(id => {
   windowId = (await browser.windows.getCurrent()).id;
   runner = new ToolRunner(windowId);
   await loadSettings();
+  updateModelPicker();
   renderEmpty();
   updateTabContext();
   refreshAccount();

@@ -109,6 +109,80 @@
     return false;
   }
 
+  // ---------- Seletor de modelo do gemini.google.com ----------
+  // O Gemini web troca de modelo por um menu ("Rápido", "Raciocínio", "Pro"...). Os seletores abaixo são tolerantes
+  // porque a interface muda com frequência: procuramos o botão do seletor e os itens do menu que ele abre.
+  function modelButton() {
+    const direct = document.querySelector(
+      "bard-mode-switcher button, [data-test-id='bard-mode-menu-button'], button.input-area-switch, button[aria-haspopup][class*='mode']"
+    );
+    if (direct) return direct;
+    return buttons().find(b => b.getAttribute("aria-haspopup") &&
+      /(modelo|model|modo|mode)/i.test(labelOf(b) + " " + (b.closest("[class]")?.className || "")) &&
+      b.closest("input-area-v2, input-container, .input-area, chat-window"));
+  }
+
+  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
+  const menuItems = () => [...document.querySelectorAll(
+    ".cdk-overlay-container [role=menuitem], .cdk-overlay-container [role=menuitemradio], .cdk-overlay-container [role=option], .cdk-overlay-container button.mat-mdc-menu-item"
+  )].filter(el => el.getBoundingClientRect().height > 0);
+
+  function closeMenu() {
+    document.querySelector(".cdk-overlay-backdrop")?.click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+  }
+
+  async function openMenu() {
+    const btn = modelButton();
+    if (!btn) throw new Error("Não encontrei o seletor de modelo do Gemini (a interface pode ter mudado).");
+    if (!menuItems().length) {
+      btn.click();
+      for (let i = 0; i < 20 && !menuItems().length; i++) await sleep(100);
+    }
+    const items = menuItems();
+    if (!items.length) { closeMenu(); throw new Error("O menu de modelos do Gemini não abriu."); }
+    return items;
+  }
+
+  function describeItem(el) {
+    const titleEl = el.querySelector(".mode-title, [class*='title'], .mat-mdc-menu-item-text > :first-child");
+    const lines = (el.innerText || el.textContent || "").split("\n").map(clean).filter(Boolean)
+      .filter(l => !/^(check|check_circle|done|lock|arrow_drop_down)$/i.test(l));
+    const nome = clean(titleEl?.innerText || titleEl?.textContent) || lines[0] || "";
+    const descricao = lines.filter(l => l !== nome).join(" — ");
+    const icons = [...el.querySelectorAll("mat-icon, .google-symbols")].map(i => clean(i.textContent));
+    const selecionado = el.getAttribute("aria-checked") === "true" || el.getAttribute("aria-selected") === "true" ||
+      /selected|is-selected|active/.test(el.className) || icons.some(i => /^(check|check_circle|done)$/.test(i));
+    const desabilitado = el.disabled || el.getAttribute("aria-disabled") === "true";
+    return { nome, descricao, selecionado, desabilitado };
+  }
+
+  function currentModel() {
+    const btn = modelButton();
+    return btn ? clean(btn.innerText || btn.textContent).replace(/\b(arrow_drop_down|expand_more|keyboard_arrow_down)\b/g, "").trim() : null;
+  }
+
+  async function listModels() {
+    const items = await openMenu();
+    const modelos = items.map(describeItem).filter(m => m.nome);
+    closeMenu();
+    await sleep(150);
+    return { atual: currentModel(), modelos };
+  }
+
+  async function selectModel({ nome }) {
+    const alvo = clean(nome).toLowerCase();
+    const items = await openMenu();
+    const item = items.find(el => describeItem(el).nome.toLowerCase() === alvo) ||
+      items.find(el => describeItem(el).nome.toLowerCase().includes(alvo));
+    if (!item) { closeMenu(); throw new Error(`Modelo "${nome}" não encontrado no menu do Gemini.`); }
+    if (describeItem(item).desabilitado) { closeMenu(); throw new Error(`O modelo "${nome}" não está disponível nesta conta.`); }
+    item.click();
+    await sleep(400);
+    if (menuItems().length) closeMenu();
+    return { ok: true, atual: currentModel() };
+  }
+
   let stopRequested = false;
 
   async function ask({ text, image }) {
@@ -175,8 +249,10 @@
       case "ping": return Promise.resolve({ ok: true });
       case "status": {
         const conta = account();
-        return Promise.resolve({ ok: true, pronto: !!editor(), logado: !!conta || isLoggedIn(), conta, url: location.href });
+        return Promise.resolve({ ok: true, pronto: !!editor(), logado: !!conta || isLoggedIn(), conta, modelo: currentModel(), url: location.href });
       }
+      case "list_models": return listModels().catch(e => ({ erro: e.message || String(e) }));
+      case "select_model": return selectModel(msg.args || {}).catch(e => ({ erro: e.message || String(e) }));
       case "ask": return ask(msg.args).catch(e => ({ erro: e.message || String(e) }));
       case "stop": stopRequested = true; stopButton()?.click(); return Promise.resolve({ ok: true });
       default: return Promise.resolve({ erro: "comando desconhecido" });

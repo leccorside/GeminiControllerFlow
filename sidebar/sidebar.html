@@ -91,6 +91,18 @@
         <svg viewBox="0 0 24 24" width="14" height="14"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
       </button>
     </div>
+    <div class="composer-bar">
+      <div class="model-wrap">
+        <div id="modelMenu" class="model-menu" role="listbox" hidden>
+          <div class="model-menu-title" data-i18n="modelMenuTitle">Modelo</div>
+          <div id="modelList2" class="model-items"></div>
+        </div>
+        <button id="modelPicker" class="model-picker" type="button" aria-haspopup="listbox" data-i18n-title="modelPickerTitle" title="Escolher o modelo">
+          <span id="modelPickerLabel">Gemini</span>
+          <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
   </footer>
 
   <script src="i18n.js"></script>

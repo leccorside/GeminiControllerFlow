@@ -11,6 +11,15 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.6 (seletor de modelo)
+
+- Botão de modelo abaixo da caixa de texto (como nos assistentes de IDE), com menu suspenso: nome, descrição e ✓ no modelo ativo; itens indisponíveis aparecem desabilitados. Fica bloqueado enquanto uma tarefa roda.
+- **Modo conta Google**: a ponte ganhou `list_models` e `select_model`. Ela abre o seletor de modo do próprio gemini.google.com (`bard-mode-switcher button` e alternativas), lê os itens do menu (`.cdk-overlay-container [role=menuitem|menuitemradio|option]`) e clica no escolhido. O `status` passou a devolver o `modelo` atual (texto do botão). A escolha é salva (`webModel`) e reaplicada a cada conversa nova.
+- **Modo API**: o menu lista os modelos de `geminiListModels` (cache em memória, limpo ao salvar as configurações) e grava em `model`.
+- 9 chaves novas de tradução (88 no total, iguais nos 3 idiomas).
+- **Validado pelo usuário em 14/11/2026**: seletor e troca de modelo 100% funcionais com a conta Google logada (os seletores tolerantes da ponte funcionaram com o menu real do gemini.google.com).
+- Pacote voltou a 49 KB (logo fora do `.xpi`). 1.0.6 assinada e colocada em `updates/`; a 1.0.5 instalada já tem `updateURL` e o `updates.json` está no GitHub (HTTP 200), então a 1.0.6 chega sozinha depois do push.
+
 ### 14/11/2026 — versão 1.0.5 (atualização automática)
 
 - `manifest.json` ganhou `browser_specific_settings.gecko.update_url` = `https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/updates.json` (repositório público). O Firefox consulta esse arquivo e instala sozinho versões novas assinadas, sem confirmação, desde que não peçam permissões novas.

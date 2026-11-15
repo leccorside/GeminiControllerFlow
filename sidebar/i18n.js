@@ -90,7 +90,16 @@ const I18N = {
     eNoTarget: "Nenhuma aba alvo.",
     eNoAccess: "Não consigo acessar esta página ({erro}). Páginas internas do Firefox (about:, addons.mozilla.org, visualizador de PDF) bloqueiam extensões.",
     eEmptyUrl: "URL vazia.",
-    eUnknownTool: "Ferramenta desconhecida: {nome}"
+    eUnknownTool: "Ferramenta desconhecida: {nome}",
+    modelMenuTitle: "Modelo",
+    modelPickerTitle: "Escolher o modelo",
+    modelLoading: "Carregando modelos…",
+    modelNone: "Nenhum modelo encontrado.",
+    modelChanged: "Modelo alterado para {m}.",
+    modelError: "Não consegui trocar o modelo: {e}",
+    modelListError: "Não consegui listar os modelos: {e}",
+    modelNeedKey: "Configure a chave da API para listar os modelos.",
+    modelDefault: "Gemini"
   },
 
   en: {
@@ -172,7 +181,16 @@ const I18N = {
     eNoTarget: "No target tab.",
     eNoAccess: "I can't access this page ({erro}). Firefox internal pages (about:, addons.mozilla.org, PDF viewer) block extensions.",
     eEmptyUrl: "Empty URL.",
-    eUnknownTool: "Unknown tool: {nome}"
+    eUnknownTool: "Unknown tool: {nome}",
+    modelMenuTitle: "Model",
+    modelPickerTitle: "Choose the model",
+    modelLoading: "Loading models…",
+    modelNone: "No models found.",
+    modelChanged: "Model changed to {m}.",
+    modelError: "Could not change the model: {e}",
+    modelListError: "Could not list the models: {e}",
+    modelNeedKey: "Set the API key to list the models.",
+    modelDefault: "Gemini"
   },
 
   es: {
@@ -254,7 +272,16 @@ const I18N = {
     eNoTarget: "No hay pestaña objetivo.",
     eNoAccess: "No puedo acceder a esta página ({erro}). Las páginas internas de Firefox (about:, addons.mozilla.org, visor de PDF) bloquean las extensiones.",
     eEmptyUrl: "URL vacía.",
-    eUnknownTool: "Herramienta desconocida: {nome}"
+    eUnknownTool: "Herramienta desconocida: {nome}",
+    modelMenuTitle: "Modelo",
+    modelPickerTitle: "Elegir el modelo",
+    modelLoading: "Cargando modelos…",
+    modelNone: "No se encontraron modelos.",
+    modelChanged: "Modelo cambiado a {m}.",
+    modelError: "No pude cambiar el modelo: {e}",
+    modelListError: "No pude listar los modelos: {e}",
+    modelNeedKey: "Configura la clave de API para listar los modelos.",
+    modelDefault: "Gemini"
   }
 };
 

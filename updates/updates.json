@@ -11,6 +11,16 @@
                                                                                                              "strict_min_version":  "115.0"
                                                                                                          }
                                                                                            }
+                                                                      },
+                                                                      {
+                                                                          "version":  "1.0.6",
+                                                                          "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.6.xpi",
+                                                                          "update_hash":  "sha256:95821dbf2e271291acb0c4b6f3aeec9e95c02a5f72680ff40e1545b6e18dc7c6",
+                                                                          "applications":  {
+                                                                                               "gecko":  {
+                                                                                                             "strict_min_version":  "115.0"
+                                                                                                         }
+                                                                                           }
                                                                       }
                                                                   ]
                                                   }
