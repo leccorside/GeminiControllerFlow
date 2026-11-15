@@ -102,7 +102,13 @@ const I18N = {
     modelDefault: "Gemini",
     modelLocked: "Bloqueado nesta conta (faça login ou verifique o plano)",
     levelAuto: "Automático",
-    levelTitle: "Nível de raciocínio"
+    levelTitle: "Nível de raciocínio",
+    attachTitle: "Anexar imagens ou arquivos",
+    attachRemove: "Remover anexo",
+    attachTooMany: "Máximo de {n} anexos por pedido.",
+    attachTooBig: "{nome} passa de {mb} MB e não foi anexado.",
+    attachOnlyPrompt: "Analise os arquivos anexados.",
+    attachUnsupportedApi: "{nome}: tipo de arquivo não suportado no modo API (ignorado)."
   },
 
   en: {
@@ -196,7 +202,13 @@ const I18N = {
     modelDefault: "Gemini",
     modelLocked: "Locked for this account (sign in or check your plan)",
     levelAuto: "Auto",
-    levelTitle: "Reasoning level"
+    levelTitle: "Reasoning level",
+    attachTitle: "Attach images or files",
+    attachRemove: "Remove attachment",
+    attachTooMany: "Up to {n} attachments per request.",
+    attachTooBig: "{nome} is larger than {mb} MB and was not attached.",
+    attachOnlyPrompt: "Analyze the attached files.",
+    attachUnsupportedApi: "{nome}: file type not supported in API mode (skipped)."
   },
 
   es: {
@@ -290,7 +302,13 @@ const I18N = {
     modelDefault: "Gemini",
     modelLocked: "Bloqueado en esta cuenta (inicia sesión o revisa tu plan)",
     levelAuto: "Automático",
-    levelTitle: "Nivel de razonamiento"
+    levelTitle: "Nivel de razonamiento",
+    attachTitle: "Adjuntar imágenes o archivos",
+    attachRemove: "Quitar adjunto",
+    attachTooMany: "Máximo de {n} adjuntos por pedido.",
+    attachTooBig: "{nome} supera los {mb} MB y no se adjuntó.",
+    attachOnlyPrompt: "Analiza los archivos adjuntos.",
+    attachUnsupportedApi: "{nome}: tipo de archivo no compatible en el modo API (omitido)."
   }
 };
 

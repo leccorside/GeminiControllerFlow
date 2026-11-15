@@ -129,24 +129,106 @@
     return actions;
   }
 
-  async function attachImage(base64, mimeType) {
-    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-    const file = new File([bytes], "captura-da-tela.jpg", { type: mimeType });
-    const area = document.querySelector("input-area-v2") || document.body;
-    const countImgs = () => area.querySelectorAll("img").length;
-    const before = countImgs();
-    const ed = editor();
-    ed.focus();
-    const dt1 = new DataTransfer(); dt1.items.add(file);
-    ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt1, bubbles: true, cancelable: true }));
-    for (let i = 0; i < 12; i++) { await sleep(250); if (countImgs() > before) return true; }
-    // Plano B: arrastar e soltar.
-    const dt2 = new DataTransfer(); dt2.items.add(file);
-    for (const type of ["dragenter", "dragover", "drop"]) {
-      area.dispatchEvent(new DragEvent(type, { dataTransfer: dt2, bubbles: true, cancelable: true }));
+  // ---------- Anexos (imagens e qualquer arquivo) ----------
+  // Conferido em 15/11/2026: ao abrir o menu "Envio e ferramentas" / "Upload & tools", o Gemini cria inputs
+  // escondidos (input.hidden-file-input): um aceita "image/*,video/*" e outro documentos (.txt,.pdf,.docx…).
+  // Pôr os arquivos direto no input (DataTransfer) + "change" anexa sem abrir o seletor de arquivos; cada anexo
+  // vira um <uploader-file-preview> (com mat-spinner enquanto sobe).
+  const fileInputs = () => [...document.querySelectorAll("input[type=file]")];
+  const previews = () => [...document.querySelectorAll("uploader-file-preview")];
+  const uploading = () => previews().some(p => p.querySelector("mat-spinner, mat-progress-spinner, [role=progressbar]"));
+  const toolsButton = () => buttons().find(b => /envio e ferramentas|upload (&|and) tools|subir y herramientas|herramientas|ferramentas|tools/i.test(labelOf(b)));
+
+  // Os objetos File/DataTransfer precisam ser criados no "mundo" da PÁGINA (wrappedJSObject + cloneInto):
+  // criados no content script, o Gemini não os aceita (testado: nenhuma prévia aparecia).
+  const PW = window.wrappedJSObject || null;
+  const toPage = v => (PW && typeof cloneInto === "function" ? cloneInto(v, window) : v);
+
+  function toFile({ name, type, data }) {
+    const bin = atob(data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const opts = { type: type || "application/octet-stream" };
+    if (PW && PW.File) {
+      const parts = new PW.Array();
+      parts.push(toPage(bytes));
+      return new PW.File(parts, name || "arquivo", toPage(opts));
     }
-    for (let i = 0; i < 12; i++) { await sleep(250); if (countImgs() > before) return true; }
-    return false;
+    return new File([bytes], name || "arquivo", opts);
+  }
+
+  function setInputFiles(inp, list) {
+    const dt = PW && PW.DataTransfer ? new PW.DataTransfer() : new DataTransfer();
+    list.forEach(f => dt.items.add(toFile(f)));
+    if (inp.wrappedJSObject) inp.wrappedJSObject.files = dt.files; else inp.files = dt.files;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  async function attachFiles(files) {
+    if (!files || !files.length) return { ok: true, anexados: 0 };
+    // Os inputs pertencem ao menu "Envio e ferramentas": só existem com ele ABERTO e somem quando ele fecha.
+    // Então: abre o menu, coloca os arquivos e só fecha depois que as prévias aparecerem.
+    let ins = fileInputs();
+    const tb = toolsButton();
+    let abriuMenu = false;
+    if (ins.length < 2 && tb) {
+      tb.click();
+      abriuMenu = true;
+      for (let i = 0; i < 20 && fileInputs().length < 2; i++) await sleep(100);
+      ins = fileInputs();
+    }
+    const fechaMenu = async () => {
+      if (!abriuMenu) return;
+      abriuMenu = false;
+      if (tb.getAttribute("aria-expanded") === "true") tb.click();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+      await sleep(200);
+    };
+    if (!ins.length) return { erro: "Não encontrei onde anexar arquivos no Gemini (o menu de envio pode ter mudado)." };
+    const midia = files.filter(f => /^(image|video)\//.test(f.type || ""));
+    const outros = files.filter(f => !midia.includes(f));
+    const antes = previews().length;
+    let imgIn = null, docIn = null;
+    // Coloca um grupo de arquivos no campo certo; reabre o menu se ele tiver fechado (os campos somem junto).
+    const put = async (list, querMidia) => {
+      if (!list.length) return;
+      ins = fileInputs();
+      if (ins.length < 2 && tb) {
+        if (tb.getAttribute("aria-expanded") !== "true") tb.click();
+        abriuMenu = true;
+        for (let i = 0; i < 20 && fileInputs().length < 2; i++) await sleep(100);
+        ins = fileInputs();
+      }
+      imgIn = ins.find(i => /image|video/.test(i.accept || ""));
+      docIn = ins.find(i => /\.txt|\.pdf/.test(i.accept || "")) || ins.find(i => i !== imgIn) || ins[0];
+      const alvoIn = querMidia ? (imgIn || docIn) : docIn;
+      if (!alvoIn) return;
+      const n0 = previews().length;
+      setInputFiles(alvoIn, list);
+      const t0 = Date.now();
+      while (previews().length < n0 + list.length && Date.now() - t0 < 10000) await sleep(250);
+    };
+    await put(midia, true);
+    await put(outros, false);
+    // Espera as prévias aparecerem e o envio dos arquivos terminar.
+    const alvo = antes + files.length;
+    let t = Date.now();
+    while (previews().length < alvo && Date.now() - t < 5000) await sleep(300);
+    await fechaMenu();
+    const anexados = previews().length - antes;
+    if (anexados <= 0) {
+      const aviso = [...document.querySelectorAll("[role=alert], simple-snack-bar, .mat-mdc-snack-bar-label")].map(e => clean(e.innerText)).filter(Boolean)[0];
+      const diag = `campos de arquivo: ${ins.length}; mídia em: ${imgIn ? (imgIn.accept || "").slice(0, 20) : "-"}; ` +
+        `documentos em: ${docIn ? (docIn.accept || "").slice(0, 20) : "-"}; arquivos no campo: ${(docIn && docIn.files ? docIn.files.length : 0)}/${(imgIn && imgIn.files ? imgIn.files.length : 0)}; ` +
+        `prévias: ${antes} → ${previews().length}; menu: ${tb ? labelOf(tb) : "não achado"}`;
+      return { erro: "O Gemini não aceitou os anexos" + (aviso ? `: ${aviso}` : " (sem aviso na tela)") + ` [${diag}]` };
+    }
+    // Espera o upload terminar (spinner some). Sem login o spinner pode nunca sumir: segue depois de 45 s e
+    // deixa o envio decidir (se o Gemini não aceitar, aparece o erro de mensagem não enviada).
+    t = Date.now();
+    while (uploading() && Date.now() - t < 45000) await sleep(400);
+    return { ok: true, anexados, faltaram: Math.max(0, files.length - anexados), aindaSubindo: uploading() };
   }
 
   // ---------- Seletor de modelo do gemini.google.com ----------
@@ -364,7 +446,7 @@
 
   const queries = () => [...document.querySelectorAll("user-query")];
 
-  async function ask({ text, image }) {
+  async function ask({ text, image, files }) {
     stopRequested = false;
     let ed = editor();
     for (let i = 0; !ed && i < 40; i++) { await sleep(250); ed = editor(); }
@@ -373,10 +455,17 @@
     // Espera uma resposta anterior terminar.
     for (let i = 0; stopButton() && i < 120; i++) await sleep(500);
 
+    // Anexos do usuário e/ou captura de tela da ferramenta screenshot.
+    const anexos = [...(files || [])];
+    if (image) anexos.push({ name: "captura-da-tela.jpg", type: image.mimeType, data: image.data });
     let imageAttached = null;
-    if (image) {
-      imageAttached = await attachImage(image.data, image.mimeType);
-      if (imageAttached) await sleep(1500); // upload
+    let avisoAnexos = "";
+    if (anexos.length) {
+      const a = await attachFiles(anexos);
+      if (a.erro && files && files.length) return { erro: a.erro };
+      imageAttached = !a.erro;
+      if (a.faltaram) avisoAnexos = `${a.faltaram} de ${anexos.length} anexo(s) não entraram no Gemini.`;
+      ed = editor() || ed; // a área pode ter sido redesenhada com as prévias
     }
 
     // Marcas de antes do envio (DOM, endereço e rede).
@@ -388,7 +477,8 @@
       urlBefore: location.href,
       iniciosBefore: net.inicios,
       finsBefore: net.fins,
-      imageAttached
+      imageAttached,
+      avisoAnexos
     };
 
     ed.focus();
@@ -460,7 +550,8 @@
         `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}${d.botaoVisivel ? "" : " (invisível)"}${d.botaoNaAreaDaCaixa ? "" : " (fora da área da caixa)"}; ` +
         `caixas: ${d.caixas}; botões de enviar: ${d.botoesEnviar}.` +
         (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
-        (d.dialogo ? ` Janela aberta: ${d.dialogo}` : ""),
+        (d.dialogo ? ` Janela aberta: ${d.dialogo}` : "") +
+        (uploading() ? " Os anexos ainda estavam subindo no Gemini (o envio só libera depois; sem login o upload pode não terminar)." : ""),
       diagnostico: d,
       naoEnviada: true
     };
@@ -505,7 +596,8 @@
     const r = responses().at(-1);
     const md = r.querySelector("message-content .markdown, message-content") || r;
     pendente = null;
-    return { texto: toText(md), acoes: extractActions(md), imagem_anexada: st.imageAttached, requisicoes: net.fins - st.finsBefore };
+    return { texto: toText(md), acoes: extractActions(md), imagem_anexada: st.imageAttached, requisicoes: net.fins - st.finsBefore,
+      avisoAnexos: st.avisoAnexos || "" };
   }
 
   // Lê a resposta do último envio sem reenviar (usado depois de mostrar a aba do Gemini).

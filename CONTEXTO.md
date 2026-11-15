@@ -11,6 +11,16 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.15 (anexar imagens e arquivos)
+
+- **Interface**: botão **+** à esquerda da caixa de texto (abre o seletor de arquivos, vários de uma vez), **Ctrl+V** de imagens/arquivos na caixa e **arrastar e soltar** na barra lateral (a caixa fica tracejada). Anexos pendentes aparecem acima da caixa (miniatura para imagem, extensão para os demais, ✕ para remover) e, ao enviar, dentro da mensagem do usuário. Limites: 10 anexos, 25 MB cada. Só anexos, sem texto → usa "Analise os arquivos anexados." Chaves novas nos 3 idiomas (97 no total).
+- **Modo conta Google** (`attachFiles` na ponte): o Gemini cria `input.hidden-file-input` **só com o menu "Envio e ferramentas" aberto** (um aceita `image/*,video/*`, outro documentos `.txt,.pdf,.docx…`) e os destrói ao fechar. A ponte abre o menu, coloca os arquivos direto no input certo (mídia × documentos) e dispara `change`; espera as prévias `<uploader-file-preview>` (por grupo, reabrindo o menu se ele fechar) e o fim do upload (`mat-spinner` some, até 45 s); fecha o menu e envia o texto. A captura de tela (`screenshot`) passou a usar o mesmo caminho (antes era colar).
+  - **Erro 1**: `File`/`DataTransfer` criados no content script não eram aceitos → criados no mundo da página (`window.wrappedJSObject` + `cloneInto`), forma documentada pela Mozilla.
+  - **Erro 2**: a ponte fechava o menu antes de pôr os arquivos e os inputs eram destruídos (diagnóstico: "arquivos no campo 1/1, prévias 0 → 0") → mantém o menu aberto até as prévias aparecerem.
+  - Os anexos vão só no 1º envio do pedido; o reenvio reduzido não anexa de novo. Aviso quando parte dos anexos não entra; erro de não envio avisa se os anexos ainda estavam subindo.
+- **Modo API**: imagem, PDF, áudio, vídeo e `text/*` vão como `inlineData`; código/dados de texto (.json, .csv, .md, .py…) viram texto; outros tipos (.docx, .zip…) são ignorados com aviso.
+- **Testes**: no Gemini real com a extensão instalada (sem login), as prévias aparecem (anexo entra), mas **sem login o upload nunca conclui** e o Gemini não libera o envio — o teste de ponta a ponta com resposta sobre o anexo depende da conta do usuário (pendente). UI renderizada no Edge headless com a API simulada (mensagem com 2 anexos + 3 pendentes): sem erros de JavaScript.
+
 ### 15/11/2026 — versão 1.0.14 (Gemini em janela própria, sem trocar a aba do usuário)
 
 - **Resultado da 1.0.13**: funcionou de ponta a ponta (buscou vagas de assistente técnico no LinkedIn e listou os resultados), mas a aba do Gemini aparecia a cada passo. Pedido: a tela do usuário (ex.: LinkedIn) não pode mudar; tudo aparece só na barra lateral.

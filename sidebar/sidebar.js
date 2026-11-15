@@ -380,14 +380,33 @@ function buildContents() {
   });
 }
 
-async function runApi(userText, ctx) {
+// Anexos no modo API: imagem, PDF, áudio, vídeo e texto vão como inlineData; outros tipos de texto conhecidos
+// viram texto; o resto é ignorado com aviso (a API não lê .docx, .zip etc. em inlineData).
+const API_INLINE = /^(image\/|audio\/|video\/|application\/pdf$|text\/)/;
+const API_TEXTO = /\.(json|csv|md|xml|html?|js|ts|py|java|c|cpp|cs|go|rb|php|sql|ya?ml|log|ini|toml)$/i;
+function apiPartsForFiles(files) {
+  const parts = [];
+  for (const f of files || []) {
+    if (API_INLINE.test(f.type || "")) parts.push({ inlineData: { mimeType: f.type, data: f.data } });
+    else if (API_TEXTO.test(f.name || "")) {
+      let txt = "";
+      try { txt = new TextDecoder().decode(Uint8Array.from(atob(f.data), c => c.charCodeAt(0))); } catch (_) { /* binário */ }
+      parts.push({ text: `[Arquivo anexado: ${f.name}]\n${txt.slice(0, 200000)}` });
+    } else addEl("msg note", null, t("attachUnsupportedApi", { nome: f.name }));
+  }
+  return parts;
+}
+
+async function runApi(userText, ctx, files) {
   if (!settings.apiKey) {
     toggleSettings(true);
     throw new Error(t("needApiKey"));
   }
+  const nomes = (files || []).length ? `\n\n[Anexos: ${files.map(f => f.name).join(", ")}]` : "";
+  const newParts = [{ text: userText + nomes + ctx }, ...apiPartsForFiles(files)];
   const last = history[history.length - 1];
-  if (last?.role === "user") last.parts.push({ text: userText + ctx });
-  else history.push({ role: "user", parts: [{ text: userText + ctx }] });
+  if (last?.role === "user") last.parts.push(...newParts);
+  else history.push({ role: "user", parts: newParts });
 
   for (let step = 0; step < settings.maxSteps; step++) {
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
@@ -556,7 +575,7 @@ function compact(obj, max = 20000) {
   return s;
 }
 
-async function runWeb(userText, ctx) {
+async function runWeb(userText, ctx, files) {
   const freshChat = webFresh;
   const st = applyStatus(await ensureGeminiTab({ fresh: webFresh }));
   // Conversa nova: reaplica o modelo escolhido pelo usuário, se o Gemini abriu com outro.
@@ -580,11 +599,15 @@ async function runWeb(userText, ctx) {
   }
   const lembrete = "[LEMBRETE] Você só consegue ver ou mudar a página do usuário pelas ferramentas: se o pedido envolve a página, responda agora com o bloco JSON da próxima ação. Não pesquise na web por conta própria no lugar de agir na página.";
   const prefixo = webFresh ? WEB_PROMPT() + "\n\n" : "";
-  let message = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${ctx}\n\n${snapshot}\n\n${lembrete}`;
+  const nomes = (files || []).length
+    ? `\n\n[ANEXOS DO USUÁRIO, já anexados a esta mensagem: ${files.map(f => f.name).join(", ")}. Leia-os para responder.]`
+    : "";
+  let message = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${nomes}${ctx}\n\n${snapshot}\n\n${lembrete}`;
   // Versão reduzida (sem a leitura da página) para o caso de o Gemini não aceitar a mensagem completa.
-  let fallbackMessage = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${ctx}\n\n${lembrete} Comece com get_page para ler a página.`;
+  let fallbackMessage = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${nomes}${ctx}\n\n${lembrete} Comece com get_page para ler a página.`;
   webFresh = false;
   let image = null;
+  let anexos = files && files.length ? files : null; // vão só no primeiro envio deste pedido
 
   for (let step = 0; step < settings.maxSteps; step++) {
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
@@ -592,13 +615,15 @@ async function runWeb(userText, ctx) {
     let res;
     try {
       // A janela do Gemini (atrás da do usuário) precisa estar restaurada e com a aba dele ativa.
-      res = await withGeminiVisible(() => bridge("ask", { text: message, image }));
+      res = await withGeminiVisible(() => bridge("ask", { text: message, image, files: anexos }));
       // Não enviada e há versão menor: tenta de novo sem a leitura da página (a caixa é substituída, não somada).
+      // Os anexos já ficaram na caixa do Gemini na primeira tentativa: não anexa de novo.
       if (res && res.naoEnviada && fallbackMessage && fallbackMessage.length < message.length && !abort.signal.aborted) {
         message = fallbackMessage;
         fallbackMessage = null;
         res = await bridge("ask", { text: message, image });
       }
+      anexos = null;
       // A página do Gemini ficou oculta (janela minimizada ou oclusão ativa): restaura a janela dele atrás e lê.
       if (res && res.precisaVisivel && !abort.signal.aborted) res = await collectVisible();
     } finally { thinking.remove(); }
@@ -606,6 +631,7 @@ async function runWeb(userText, ctx) {
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
     if (!res) throw new Error(t("geminiTabGone"));
     if (res.erro) throw new Error(res.erro);
+    if (res.avisoAnexos) addEl("msg note", null, res.avisoAnexos);
 
     const visible = stripActionBlocks(res.texto || "");
     if (visible) { addEl("msg model", renderMarkdown(visible)); stepsBox = null; }
@@ -633,19 +659,20 @@ async function runWeb(userText, ctx) {
 }
 
 // ---------- Execução de um pedido ----------
-async function runAgent(userText) {
+async function runAgent(userText, files = []) {
   setBusy(true);
   approveAll = false;
   abort = new AbortController();
-  addEl("msg user", null, userText);
+  const bolha = addEl("msg user", null, userText);
+  if (files.length) bolha.appendChild(renderAttachChips(files, false));
   try {
     const tab = await runner.syncActiveTab();
     if (settings.engine === "web" && tab && tab.id === geminiTabId) {
       throw new Error(t("activeIsGemini"));
     }
     const ctx = tab ? `\n\n[Aba atual: "${tab.title}" — ${tab.url}]` : "";
-    if (settings.engine === "api") await runApi(userText, ctx);
-    else await runWeb(userText, ctx);
+    if (settings.engine === "api") await runApi(userText, ctx, files);
+    else await runWeb(userText, ctx, files);
   } catch (e) {
     if (e.name === "AbortError") addEl("msg error", null, t("interrupted"));
     else addEl("msg error", null, e.message || String(e));
@@ -815,11 +842,92 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeModelMe
 // ---------- Eventos ----------
 function send() {
   const input = $("input");
-  const text = input.value.trim();
-  if (!text || busy) return;
+  let text = input.value.trim();
+  if (busy || (!text && !pendingFiles.length)) return;
+  if (!text) text = t("attachOnlyPrompt");
+  const files = pendingFiles;
+  pendingFiles = [];
+  renderPending();
   input.value = "";
   autoresize();
-  runAgent(text);
+  runAgent(text, files);
+}
+
+// ---------- Anexos (botão +, colar e arrastar) ----------
+const MAX_FILES = 10;
+const MAX_MB = 25;
+let pendingFiles = []; // { name, type, size, data (base64), thumb (dataURL da imagem, se houver) }
+
+function fmtSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+function readAsDataURL(file) {
+  return new Promise((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result));
+    r.onerror = () => fail(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function addFiles(fileList) {
+  for (const f of [...(fileList || [])]) {
+    if (pendingFiles.length >= MAX_FILES) { addEl("msg error", null, t("attachTooMany", { n: MAX_FILES })); break; }
+    if (f.size > MAX_MB * 1048576) { addEl("msg error", null, t("attachTooBig", { nome: f.name, mb: MAX_MB })); continue; }
+    try {
+      const url = await readAsDataURL(f);
+      const data = url.slice(url.indexOf(",") + 1);
+      pendingFiles.push({ name: f.name || "arquivo", type: f.type || "application/octet-stream", size: f.size, data,
+        thumb: /^image\//.test(f.type) ? url : null });
+    } catch (e) {
+      addEl("msg error", null, `${f.name}: ${e.message || e}`);
+    }
+  }
+  renderPending();
+}
+
+// Chips dos anexos: na área de envio (removíveis) ou dentro da mensagem enviada.
+function renderAttachChips(files, removivel) {
+  const box = el("div", "attach-chips");
+  files.forEach((f, i) => {
+    const chip = el("div", "attach-chip");
+    chip.title = `${f.name} — ${fmtSize(f.size)}`;
+    if (f.thumb) { const img = document.createElement("img"); img.src = f.thumb; img.alt = ""; chip.appendChild(img); }
+    else chip.appendChild(el("span", "attach-ext", (f.name.split(".").pop() || "?").slice(0, 4).toUpperCase()));
+    chip.appendChild(el("span", "attach-name", f.name));
+    if (removivel) {
+      const x = el("button", "attach-x", "✕");
+      x.type = "button"; x.title = t("attachRemove"); x.setAttribute("aria-label", `${t("attachRemove")}: ${f.name}`);
+      x.onclick = () => { pendingFiles.splice(i, 1); renderPending(); };
+      chip.appendChild(x);
+    }
+    box.appendChild(chip);
+  });
+  return box;
+}
+
+function renderPending() {
+  const list = $("attachList");
+  list.hidden = !pendingFiles.length;
+  list.replaceChildren(...(pendingFiles.length ? [renderAttachChips(pendingFiles, true)] : []));
+}
+
+$("btnAttach").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", e => { addFiles(e.target.files); e.target.value = ""; });
+$("input").addEventListener("paste", e => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) { e.preventDefault(); addFiles(files); }
+});
+for (const alvo of [document.body]) {
+  alvo.addEventListener("dragover", e => {
+    if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); $("inputWrap").classList.add("drop"); }
+  });
+  alvo.addEventListener("dragleave", e => { if (!e.relatedTarget) $("inputWrap").classList.remove("drop"); });
+  alvo.addEventListener("drop", e => {
+    $("inputWrap").classList.remove("drop");
+    if (e.dataTransfer?.files?.length) { e.preventDefault(); addFiles(e.dataTransfer.files); }
+  });
 }
 
 function autoresize() {
