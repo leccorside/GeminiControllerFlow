@@ -84,7 +84,15 @@
 
   <main id="chat" class="chat" aria-live="polite"></main>
 
-  <footer class="composer">
+  <!-- Abas sem sessão: o assistente só abre aqui se o usuário clicar (com conversa limpa). -->
+  <section id="tabGate" class="tab-gate" hidden>
+    <img src="../icons/icon.svg" alt="" width="36" height="36">
+    <p class="gate-title">O assistente não está aberto nesta aba</p>
+    <p class="gate-text">Ele continua na aba em que você o abriu.</p>
+    <button type="button" class="btn-primary">Abrir o assistente nesta aba</button>
+  </section>
+
+  <footer class="composer" id="composer">
     <div class="tab-context" id="tabContext"></div>
     <div id="attachList" class="attach-list" hidden></div>
     <div class="input-wrap" id="inputWrap">

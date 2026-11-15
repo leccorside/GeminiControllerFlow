@@ -6,7 +6,7 @@ Abre o Gemini na barra lateral do Firefox como assistente, com acesso à página
 
 | Modo | Como funciona | Precisa de |
 |---|---|---|
-| **Minha conta Google** (padrão) | A extensão abre o `gemini.google.com` (logado na sua conta) numa janela própria, atrás da sua, e conversa com ele por lá: digita suas mensagens, espera a resposta, executa as ações pedidas na sua página e devolve o resultado. A conversa também fica no histórico do Gemini. | Só estar logado no gemini.google.com |
+| **Minha conta Google** (padrão) | O `gemini.google.com` (logado na sua conta) roda **escondido dentro da própria barra lateral** — sem abrir aba nem janela. A extensão digita suas mensagens nele, espera a resposta, executa as ações pedidas na sua página e devolve o resultado. A conversa também fica no histórico do Gemini. | Só estar logado no gemini.google.com |
 | **Chave da API** | Chama a API oficial do Gemini com *function calling*. Mais rápido e estável. | Chave do [Google AI Studio](https://aistudio.google.com/apikey) |
 
 ## Instalar (modo desenvolvedor)
@@ -51,7 +51,11 @@ Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinst
    - "Resuma esta página"
    - "Curta a primeira publicação do feed"
    - "Pesquise notebook gamer e ordene pelo menor preço"
-3. A janela do Gemini fica atrás da sua e precisa continuar aberta (pode ficar coberta; evite minimizar). No Windows, `widget.windows.window_occlusion_tracking.enabled = false` no `user.js` do perfil — senão o Firefox trata a janela coberta como oculta e o Gemini da conta não envia.
+3. Nada de aba ou janela do Gemini: ele roda escondido dentro da barra lateral, que precisa estar aberta enquanto o agente trabalha. O login é feito uma vez numa aba normal (botão "Abrir o Gemini para fazer login"); depois disso o quadro usa a sua conta automaticamente.
+
+### Um assistente por aba
+
+O assistente fica na aba em que você o abriu. Nas outras abas a barra lateral mostra só "Abrir o assistente nesta aba" (conversa limpa); voltando à primeira aba, a conversa dela continua lá. Uma tarefa em andamento segue na aba dela mesmo se você trocar de aba. (O Firefox só deixa abrir/fechar a barra lateral com um clique seu — use o X ou Ctrl+Shift+Y para escondê-la.)
 
 ## Configurações
 
@@ -68,7 +72,7 @@ Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinst
 
 ## Anexos
 
-Botão **+** ao lado da caixa de texto, **Ctrl+V** ou arrastar e soltar: imagens, PDFs, documentos e qualquer arquivo que o Gemini aceite (até 10 por pedido, 25 MB cada).
+Botão **+** ao lado da caixa de texto, **Ctrl+V** ou arrastar e soltar: imagens, PDFs, documentos e qualquer arquivo que o Gemini aceite (até 20 por pedido, 25 MB cada; no modo conta Google eles vão em lotes de 10, que é o limite do Gemini por mensagem).
 
 ## Habilidades
 

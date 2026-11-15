@@ -626,9 +626,9 @@
     return waitAndRead(st);
   }
 
-  browser.runtime.onMessage.addListener(msg => {
-    if (!msg || msg.__gcBridge !== true) return undefined;
-    switch (msg.cmd) {
+  // Executa um comando da ponte (vindo da barra lateral pela porta, ou de uma aba pelo onMessage).
+  function dispatch(cmd, args) {
+    switch (cmd) {
       case "ping": return Promise.resolve({ ok: true });
       case "status": {
         const conta = account();
@@ -636,11 +636,28 @@
           nivel: lastSelected && lastSelected.botao === buttonText() ? lastSelected.nivel || "" : "", url: location.href });
       }
       case "list_models": return listModels().catch(e => ({ erro: e.message || String(e) }));
-      case "select_model": return selectModel(msg.args || {}).catch(e => ({ erro: e.message || String(e) }));
-      case "ask": return ask(msg.args).catch(e => ({ erro: e.message || String(e) }));
+      case "select_model": return selectModel(args || {}).catch(e => ({ erro: e.message || String(e) }));
+      case "ask": return ask(args).catch(e => ({ erro: e.message || String(e) }));
       case "collect": return collect().catch(e => ({ erro: e.message || String(e) }));
       case "stop": stopRequested = true; stopButton()?.click(); return Promise.resolve({ ok: true });
       default: return Promise.resolve({ erro: "comando desconhecido" });
     }
+  }
+
+  browser.runtime.onMessage.addListener(msg => {
+    if (!msg || msg.__gcBridge !== true) return undefined;
+    return dispatch(msg.cmd, msg.args);
   });
+
+  // Gemini dentro da BARRA LATERAL (iframe escondido): não há aba, então a ponte conversa pela porta.
+  // A barra lateral dá ao iframe um nome único ("gcf-bridge:<token>"); só esse nome se conecta a ela.
+  if (window.top !== window && /^gcf-bridge:[\w-]+$/.test(window.name || "")) {
+    const port = browser.runtime.connect({ name: window.name });
+    port.onMessage.addListener(async m => {
+      if (!m || !m.id) return;
+      let result;
+      try { result = await dispatch(m.cmd, m.args); } catch (e) { result = { erro: e.message || String(e) }; }
+      try { port.postMessage({ id: m.id, result }); } catch (_) { /* barra lateral fechada */ }
+    });
+  }
 })();

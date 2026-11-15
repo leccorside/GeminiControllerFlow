@@ -634,13 +634,172 @@
     }
   }
 
+  // ---------- Habilidade WordPress: Elementor ----------
+  // Usa a API de comandos do próprio editor do Elementor ($e.run). Funciona no modo Containers (Elementor atual)
+  // e no modo Seções/Colunas (antigo). A página é descrita em "secoes" (ver skills.js) e montada aqui.
+  const EL_READY = `!!(window.elementor && window.$e && elementor.documents && elementor.documents.getCurrent && elementor.documents.getCurrent() && elementor.getPreviewContainer && elementor.getPreviewContainer())`;
+
+  async function elementorReady() {
+    for (let i = 0; i < 120; i++) {
+      if (pageEval(`JSON.stringify(${EL_READY})`) === true) return;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    throw new Error("O editor do Elementor não está aberto (ou não terminou de carregar). Abra {site}/wp-admin/post.php?post=ID&action=elementor.");
+  }
+
+  // Monta os modelos dos widgets a partir da descrição simples usada pelo agente.
+  const EL_WIDGETS = `
+    function px(n){ return { unit: "px", size: Number(n) }; }
+    function alinha(a){ return ({ esquerda: "left", centro: "center", direita: "right", justificado: "justify" })[a] || a || undefined; }
+    function limpa(o){ Object.keys(o).forEach(function(k){ if (o[k] === undefined || o[k] === null || o[k] === "") delete o[k]; }); return o; }
+    function widgetModel(w){
+      var t = String(w.tipo || w.type || "").toLowerCase(), s;
+      if (t === "titulo" || t === "heading") {
+        s = limpa({ title: w.texto, header_size: w.nivel || "h2", align: alinha(w.alinhamento), title_color: w.cor });
+        if (w.tamanho) { s.typography_typography = "custom"; s.typography_font_size = px(w.tamanho); }
+        return { elType: "widget", widgetType: "heading", settings: s };
+      }
+      if (t === "texto" || t === "text") return { elType: "widget", widgetType: "text-editor", settings: limpa({ editor: w.html || ("<p>" + (w.texto || "") + "</p>"), align: alinha(w.alinhamento), text_color: w.cor }) };
+      if (t === "imagem" || t === "image") return { elType: "widget", widgetType: "image", settings: limpa({ image: { id: w.id || "", url: w.url || "", alt: w.alt || "" }, image_size: w.tamanho || "large", align: alinha(w.alinhamento) }) };
+      if (t === "botao" || t === "button") return { elType: "widget", widgetType: "button", settings: limpa({ text: w.texto, link: { url: w.link || "#", is_external: "", nofollow: "" }, align: alinha(w.alinhamento), background_color: w.cor_fundo, button_text_color: w.cor_texto, size: w.tamanho }) };
+      if (t === "espaco" || t === "spacer") return { elType: "widget", widgetType: "spacer", settings: { space: px(w.altura || 40) } };
+      if (t === "divisor" || t === "divider") return { elType: "widget", widgetType: "divider", settings: limpa({ color: w.cor }) };
+      if (t === "lista" || t === "icon-list") return { elType: "widget", widgetType: "icon-list", settings: { icon_list: (w.itens || []).map(function(x, i){ return { _id: "gcf" + i + Math.random().toString(36).slice(2, 6), text: String(x), selected_icon: { value: w.icone || "fas fa-check", library: "fa-solid" } }; }) } };
+      if (t === "video") return { elType: "widget", widgetType: "video", settings: { youtube_url: w.url || "" } };
+      if (t === "html") return { elType: "widget", widgetType: "html", settings: { html: w.html || "" } };
+      if (t === "widget" && w.widgetType) return { elType: "widget", widgetType: w.widgetType, settings: w.settings || {} };
+      return null;
+    }`;
+
+  async function elementorTool(a = {}) {
+    const acao = a.acao || a.action;
+    const S = v => JSON.stringify(v == null ? "" : String(v));
+    if (acao !== "info") await elementorReady();
+    switch (acao) {
+      case "info": {
+        const pronto = pageEval(`JSON.stringify(${EL_READY})`) === true;
+        if (!pronto) return { ok: true, editorAberto: false, aviso: "Editor do Elementor não está aberto nesta aba." };
+        return { ok: true, editorAberto: true, ...pageEval(`(function(){ var d = elementor.documents.getCurrent(); var c = d.config || {};
+          var exp = (window.elementorCommon && elementorCommon.config && elementorCommon.config.experimentalFeatures) || {};
+          var root = elementor.getPreviewContainer();
+          var tipos = Object.keys((elementor.widgetsCache) || (elementor.config && elementor.config.widgets) || {});
+          return JSON.stringify({ versao: (elementor.config && elementor.config.version) || (window.ElementorConfig && ElementorConfig.version) || null,
+            modo: exp.container ? "containers" : "secoes",
+            id: c.id, titulo: d.container && d.container.settings && d.container.settings.get("post_title"),
+            status: c.status && c.status.value, tipo: c.type,
+            elementosNoTopo: (root.children || []).length,
+            widgetsDisponiveis: tipos.length,
+            pro: !!window.elementorPro,
+            preview: c.urls && (c.urls.wp_preview || c.urls.permalink) });
+        })()`) };
+      }
+      case "get_structure": {
+        return { ok: true, estrutura: pageEval(`(function(){
+          function txt(s){ var v = s && (s.get("title") || s.get("editor") || s.get("text") || ""); return String(v || "").replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 80); }
+          function walk(c, d){ return (c.children || []).map(function(x){ var m = x.model; var o = { tipo: m.get("elType") === "widget" ? m.get("widgetType") : m.get("elType") };
+            var t = txt(x.settings); if (t) o.texto = t; if (x.children && x.children.length && d < 4) o.filhos = walk(x, d + 1); return o; }); }
+          return JSON.stringify(walk(elementor.getPreviewContainer(), 0)); })()`) };
+      }
+      case "set_title": {
+        // ocultar_titulo: esconde o título que o tema mostra como H1 (evita dois H1 quando o topo já tem um).
+        const settings = {};
+        if (a.titulo) settings.post_title = String(a.titulo);
+        if (a.ocultar_titulo != null) settings.hide_title = a.ocultar_titulo ? "yes" : "";
+        pageEval(`(function(){ $e.run("document/elements/settings", { container: elementor.documents.getCurrent().container, settings: ${JSON.stringify(settings)}, options: { external: true } }); return "1"; })()`);
+        return { ok: true, titulo: a.titulo, ocultar_titulo: !!a.ocultar_titulo };
+      }
+      case "build": {
+        let secoes = a.secoes;
+        if (!secoes && a.secoes_json) { try { secoes = JSON.parse(a.secoes_json); } catch (e) { throw new Error("secoes_json não é um JSON válido: " + e.message); } }
+        if (!Array.isArray(secoes) || !secoes.length) throw new Error("Informe secoes (lista de seções) ou secoes_json.");
+        const r = pageEval(`(function(){ ${EL_WIDGETS}
+          var secoes = ${JSON.stringify(secoes)}, acrescentar = ${JSON.stringify(a.modo === "acrescentar")};
+          var exp = (window.elementorCommon && elementorCommon.config && elementorCommon.config.experimentalFeatures) || {};
+          var containers = !!exp.container;
+          var root = elementor.getPreviewContainer();
+          if (!acrescentar) $e.run("document/elements/empty", { force: true });
+          var feito = { modo: containers ? "containers" : "secoes", secoes: 0, widgets: 0, ignorados: [] };
+          secoes.forEach(function(sec){
+            var cols = sec.colunas && sec.colunas.length ? sec.colunas : [sec.widgets || []];
+            var st = {};
+            if (sec.fundo) { st.background_background = "classic"; st.background_color = sec.fundo; }
+            if (sec.imagem_fundo) { st.background_background = "classic"; st.background_image = { id: sec.imagem_fundo.id || "", url: sec.imagem_fundo.url || sec.imagem_fundo }; st.background_size = "cover"; st.background_position = "center center"; }
+            if (sec.padding != null) st.padding = { unit: "px", top: String(sec.padding), right: "20", bottom: String(sec.padding), left: "20", isLinked: false };
+            if (sec.altura_minima) st.min_height = { unit: "px", size: Number(sec.altura_minima) };
+            var alvos = [];
+            if (containers) {
+              st.content_width = sec.largura === "total" ? "full" : "boxed";
+              st.flex_direction = cols.length > 1 ? "row" : "column";
+              st.flex_direction_mobile = "column";
+              if (sec.alinhamento_vertical === "centro") st.flex_justify_content = "center";
+              var box = $e.run("document/elements/create", { container: root, model: { elType: "container", settings: st }, options: { edit: false } });
+              if (cols.length > 1) cols.forEach(function(){
+                alvos.push($e.run("document/elements/create", { container: box, model: { elType: "container", isInner: true,
+                  settings: { content_width: "full", flex_direction: "column", width: { unit: "%", size: Math.floor(100 / cols.length) - 1 }, width_mobile: { unit: "%", size: 100 } } }, options: { edit: false } }));
+              });
+              else alvos.push(box);
+            } else {
+              var secao = $e.run("document/elements/create", { container: root, model: { elType: "section", settings: st }, columns: cols.length, options: { edit: false } });
+              alvos = (secao.children || []).slice();
+              while (alvos.length < cols.length) alvos.push($e.run("document/elements/create", { container: secao, model: { elType: "column" }, options: { edit: false } }));
+            }
+            cols.forEach(function(lista, i){ (lista || []).forEach(function(w){
+              var m = widgetModel(w); if (!m) { feito.ignorados.push(w.tipo || w.type || "?"); return; }
+              $e.run("document/elements/create", { container: alvos[i], model: m, options: { edit: false } }); feito.widgets++;
+            }); });
+            feito.secoes++;
+          });
+          feito.elementosNoTopo = (root.children || []).length;
+          return JSON.stringify(feito); })()`);
+        return { ok: true, ...r, aviso: r.ignorados && r.ignorados.length ? "Widgets com tipo desconhecido foram ignorados: " + r.ignorados.join(", ") : undefined };
+      }
+      case "save": {
+        const r = await pageJob(`
+          var d = elementor.documents.getCurrent(), st = d.config && d.config.status && d.config.status.value;
+          if (st === "publish" || st === "future" || st === "private") throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Peça autorização ao usuário.");
+          await $e.run("document/save/draft");
+          var c = d.config || {};
+          return { id: c.id, status: (c.status && c.status.value) || "draft", preview: c.urls && (c.urls.wp_preview || c.urls.permalink),
+            editar: location.href };`, 90000);
+        return { ok: true, editor: "elementor", ...r };
+      }
+      case "preview": {
+        const link = pageEval(`JSON.stringify((function(){ var c = elementor.documents.getCurrent().config || {}; return (c.urls && (c.urls.wp_preview || c.urls.permalink)) || ""; })())`);
+        if (!link) throw new Error("Salve o rascunho antes (acao save) para ter a pré-visualização.");
+        return analisarPreview(link, ["[data-elementor-type=wp-page]", "[data-elementor-type]", "main", ".entry-content", "article"]);
+      }
+      default:
+        throw new Error(`Ação desconhecida: ${acao}. Use info, get_structure, set_title, build, save ou preview.`);
+    }
+  }
+
+  // Lê a pré-visualização (sem abrir aba) e resume a estrutura do conteúdo principal.
+  async function analisarPreview(link, seletores) {
+    const res = await fetch(link, { credentials: "include" });
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const main = seletores.map(s => doc.querySelector(s)).find(Boolean) || doc.body;
+    const texto = s => (s || "").replace(/\s+/g, " ").trim();
+    const h1 = doc.querySelectorAll("h1").length;
+    return {
+      ok: res.ok, link, http: res.status,
+      avisoH1: h1 > 1 ? `${h1} títulos H1 na página: o tema já mostra o título da página como H1; use H2 no topo/hero (ou oculte o título) para ficar com um só.` : undefined,
+      titulos: [...main.querySelectorAll("h1, h2, h3")].slice(0, 60).map(h => `${h.tagName}: ${texto(h.textContent).slice(0, 90)}`),
+      imagens: [...main.querySelectorAll("img")].slice(0, 30).map(i => ({ src: (i.getAttribute("src") || "").slice(-80), alt: i.getAttribute("alt") || "" })),
+      botoes: [...main.querySelectorAll(".wp-block-button a, a.wp-element-button, a.elementor-button")].slice(0, 30).map(b => `${texto(b.textContent)} → ${b.getAttribute("href")}`),
+      revisar: (texto(main.textContent).match(/\[REVISAR\][^.\n]{0,60}/g) || []).slice(0, 30),
+      colunas: main.querySelectorAll(".wp-block-columns > .wp-block-column, .e-con > .e-con, .e-con-inner > .e-con, .elementor-column").length
+    };
+  }
+
   const handlers = {
     ping: () => ({ ok: true }),
     page_info: pageInfo,
     get_page: getPage,
     click, type_text: typeText, select_option: selectOption, press_key: pressKey,
     scroll, hover, get_text: getText,
-    wordpress
+    wordpress,
+    elementor: elementorTool
   };
 
   window.__geminiControllerFlow = true;

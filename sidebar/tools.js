@@ -153,10 +153,27 @@ const TOOL_DECLARATIONS = [
   }
 ];
 
+TOOL_DECLARATIONS.push({
+  name: "elementor",
+  description: "Habilidade WordPress com Elementor: monta a página no editor do Elementor (aberto em post.php?post=ID&action=elementor) a partir de uma descrição das seções. Funciona com Containers e com Seções/Colunas. NUNCA publica: salva só como rascunho.",
+  parameters: {
+    type: O,
+    properties: {
+      acao: { type: S, enum: ["info", "get_structure", "set_title", "build", "save", "preview"],
+        description: "info: versão, modo (containers/secoes), status, widgets; get_structure: árvore atual; set_title; build: monta as seções; save: rascunho; preview: lê a pré-visualização sem abrir aba." },
+      titulo: { type: S, description: "set_title" },
+      ocultar_titulo: { type: B, description: "set_title: true esconde o título que o tema mostra como H1 (use quando o topo já tem um H1)." },
+      secoes_json: { type: S, description: "build: JSON com a lista de seções (formato no roteiro da habilidade)." },
+      modo: { type: S, enum: ["substituir", "acrescentar"], description: "build: substituir (padrão, limpa a página) ou acrescentar no fim." }
+    },
+    required: ["acao"]
+  }
+});
+
 // Ferramentas que alteram algo e podem pedir confirmação.
-const ACTION_TOOLS = new Set(["click", "type_text", "select_option", "press_key", "navigate", "open_tab", "run_javascript", "wordpress"]);
-// Ações da ferramenta wordpress que só leem (não pedem confirmação).
-const WP_READ_ONLY = new Set(["info", "get_content", "preview"]);
+const ACTION_TOOLS = new Set(["click", "type_text", "select_option", "press_key", "navigate", "open_tab", "run_javascript", "wordpress", "elementor"]);
+// Ações das ferramentas wordpress/elementor que só leem (não pedem confirmação).
+const WP_READ_ONLY = new Set(["info", "get_content", "get_structure", "preview"]);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -221,6 +238,7 @@ class ToolRunner {
       case "open_tab": return t("lOpenTab", { url: a.url });
       case "run_javascript": return t("lJs");
       case "wordpress": return t("lWp_" + (a.acao || "info"), { titulo: a.titulo, slug: a.slug, anexo: a.anexo });
+      case "elementor": return t("lEl_" + (a.acao || "info"), { titulo: a.titulo });
       default: return name;
     }
   }
@@ -315,6 +333,13 @@ class ToolRunner {
         }
         const r = await this.content("wordpress", args);
         return { response: r };
+      }
+
+      case "elementor": {
+        const args = { ...a };
+        // O Gemini às vezes manda as seções já como lista: aceita também.
+        if (Array.isArray(args.secoes_json)) { args.secoes = args.secoes_json; delete args.secoes_json; }
+        return { response: await this.content("elementor", args) };
       }
 
       case "run_javascript": {
