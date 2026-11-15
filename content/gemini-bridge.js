@@ -5,11 +5,40 @@
   window.__geminiBridge = true;
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const editor = () => document.querySelector("rich-textarea .ql-editor[contenteditable=true], rich-textarea [contenteditable=true]");
+  const isVisible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
   const labelOf = b => (b.getAttribute("aria-label") || b.getAttribute("mattooltip") || "").toLowerCase();
   const buttons = () => [...document.querySelectorAll("button")];
-  const sendButton = () => buttons().find(b => /^(enviar mensagem|send message)$/.test(labelOf(b))) ||
-    document.querySelector("button.send-button");
+
+  // Com a conta logada o Gemini pode ter mais de uma caixa e mais de um botão "Send message" na página
+  // (edição de mensagem, painéis, Canvas). Preferimos sempre os VISÍVEIS da área de digitação principal.
+  const INPUT_AREA = "input-area-v2, input-container, .input-area-container, .input-area";
+  function editor() {
+    const all = [...document.querySelectorAll("rich-textarea .ql-editor[contenteditable=true], rich-textarea [contenteditable=true]")];
+    return all.find(e => isVisible(e) && e.closest(INPUT_AREA)) || all.find(isVisible) || all[0] || null;
+  }
+  const SEND_LABEL = /^(enviar mensagem|enviar|send message|send|enviar mensaje)$/;
+  function sendCandidates() {
+    return buttons().filter(b => SEND_LABEL.test(labelOf(b).trim()) || b.classList.contains("send-button") ||
+      b.matches("[data-test-id*=send]") || !!b.querySelector("mat-icon[fonticon=send], mat-icon[data-mat-icon-name=send]"));
+  }
+  function sendButton() {
+    const ed = editor();
+    const area = ed && ed.closest(INPUT_AREA);
+    const cands = sendCandidates();
+    return (area && cands.find(b => area.contains(b) && isVisible(b))) ||
+      cands.find(b => isVisible(b) && SEND_LABEL.test(labelOf(b).trim())) ||
+      cands.find(isVisible) || cands[0] || null;
+  }
+  // Clique "completo" (pointer + mouse + click), no centro do botão — alguns componentes ouvem pointerdown/up.
+  function realClick(el) {
+    const r = el.getBoundingClientRect();
+    const o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
+    el.dispatchEvent(new PointerEvent("pointerdown", { ...o, pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 1 }));
+    el.dispatchEvent(new MouseEvent("mousedown", { ...o, buttons: 1 }));
+    el.dispatchEvent(new PointerEvent("pointerup", { ...o, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+    el.dispatchEvent(new MouseEvent("mouseup", o));
+    el.click();
+  }
   const stopButton = () => buttons().find(b => /parar resposta|stop response|parar de gerar|stop generating/.test(labelOf(b)));
   const responses = () => [...document.querySelectorAll("model-response")];
 
@@ -289,9 +318,16 @@
         .filter(visible).map(el => clean(el.innerText || el.textContent)).filter(t => t && t.length < 300)
     ])].slice(0, 4);
     const dlg = [...document.querySelectorAll("[role=dialog], mat-dialog-container, .cdk-overlay-pane")].find(visible);
+    const eds = [...document.querySelectorAll("rich-textarea [contenteditable=true]")];
+    const sends = sendCandidates();
+    const ed = editor();
     return {
       botao: btn ? clean(btn.getAttribute("aria-label") || btn.innerText) : "nenhum",
       desabilitado: !!btn && (btn.disabled || btn.getAttribute("aria-disabled") === "true"),
+      botaoVisivel: !!btn && visible(btn),
+      botaoNaAreaDaCaixa: !!(btn && ed && ed.closest(INPUT_AREA) && ed.closest(INPUT_AREA).contains(btn)),
+      caixas: `${eds.filter(visible).length} visíveis de ${eds.length}`,
+      botoesEnviar: `${sends.filter(visible).length} visíveis de ${sends.length}`,
       avisos,
       dialogo: dlg ? clean(dlg.innerText || dlg.textContent).slice(0, 200) : ""
     };
@@ -345,7 +381,7 @@
       await sleep(250);
     }
     if (!btn) return { erro: `Botão de enviar do Gemini não encontrado (a interface pode ter mudado). Texto na caixa: ${typed} caracteres.` };
-    btn.click();
+    realClick(btn);
 
     // 1) Confirma que a mensagem saiu: caixa esvaziou ou apareceu um pedido novo do usuário.
     const sent = () => clean(editor()?.textContent).length < Math.min(typed, 20) ||
@@ -355,14 +391,25 @@
     if (!sent()) {
       // Segunda tentativa: Enter na caixa, depois clique de novo.
       const e2 = editor();
-      e2?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+      e2?.focus();
+      const kev = type => new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true });
+      e2?.dispatchEvent(kev("keydown")); e2?.dispatchEvent(kev("keypress")); e2?.dispatchEvent(kev("keyup"));
       await sleep(1500);
-      if (!sent()) { sendButton()?.click(); await sleep(2000); }
+      // Último recurso: clica em cada candidato visível a "enviar" (pode haver mais de um na página da conta).
+      if (!sent()) {
+        for (const b of sendCandidates().filter(isVisible)) {
+          if (b.disabled || b.getAttribute("aria-disabled") === "true") continue;
+          realClick(b);
+          await sleep(1500);
+          if (sent()) break;
+        }
+      }
       if (!sent()) {
         const d = sendDiagnostics(btn);
         return {
           erro: `A mensagem não foi enviada ao Gemini (o texto continua na caixa: ${clean(editor()?.textContent).length} de ${typed} caracteres). ` +
-            `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}.` +
+            `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}${d.botaoVisivel ? "" : " (invisível)"}${d.botaoNaAreaDaCaixa ? "" : " (fora da área da caixa)"}; ` +
+            `caixas: ${d.caixas}; botões de enviar: ${d.botoesEnviar}.` +
             (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
             (d.dialogo ? ` Janela aberta: ${d.dialogo}` : ""),
           diagnostico: d,

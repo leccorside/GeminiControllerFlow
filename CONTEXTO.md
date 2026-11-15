@@ -11,6 +11,14 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.11 (caixa e botão de enviar visíveis)
+
+- **Erro relatado (1.0.10)**: "não foi enviada… 5457 de 5457 caracteres. Botão de enviar: 'Send message'. Nenhum aviso visível". Mostra que o reenvio reduzido também falhou, que a conta usa o Gemini **em inglês** e que o botão estava habilitado e sem aviso — o clique não chegou ao botão certo. O print da aba do Gemini citado pelo usuário não veio anexado.
+- **Hipótese**: a ponte usava o **primeiro** `rich-textarea` e o **primeiro** botão "Send message" da página. Com conta logada pode haver duplicatas escondidas (edição de mensagem, painéis, Canvas); sem login só há um de cada.
+- **Correção**: `editor()` prefere a caixa visível dentro da área de digitação (`input-area-v2`, `input-container`…); `sendButton()` prefere o botão visível **dentro da mesma área da caixa** (rótulos pt/en/es, classe `send-button`, `data-test-id*=send`, ícone `send`); clique completo (`pointerdown/mousedown/pointerup/mouseup/click`); na nova tentativa, Enter (keydown/keypress/keyup) e clique em cada candidato visível. O diagnóstico mostra se o botão está visível/na área da caixa e quantas caixas e botões de enviar existem (visíveis/total). `:has()` evitado (Firefox < 121).
+- **Testes** (extensão real no Firefox headless): pt-BR longo OK (17 s); **inglês** longo OK (10 s) — numa primeira rodada em inglês a pergunta foi enviada e respondida mas o teste não recebeu o resultado em 240 s, e não se repetiu (registrado como possível intermitência na detecção do fim da resposta). Página em inglês com a ponte direto: OK (6 s); botões em inglês durante/depois: "Copy prompt / Edit / Redo / Copy / Show more options".
+- **Pendente**: teste com a conta do usuário e print da aba do Gemini se falhar.
+
 ### 14/11/2026 — versão 1.0.10 (mensagem não enviada ao Gemini da conta)
 
 - **Erro relatado (1.0.9)**: "A mensagem não foi enviada ao Gemini (o texto continua na caixa: 13665 de 13708 caracteres)". O texto entra na caixa, mas o clique em Enviar (e a nova tentativa com Enter + clique) não envia — **só com a conta logada**.
