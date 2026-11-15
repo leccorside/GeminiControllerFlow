@@ -14,7 +14,12 @@
   const INPUT_AREA = "input-area-v2, input-container, .input-area-container, .input-area";
   function editor() {
     const all = [...document.querySelectorAll("rich-textarea .ql-editor[contenteditable=true], rich-textarea [contenteditable=true]")];
-    return all.find(e => isVisible(e) && e.closest(INPUT_AREA)) || all.find(isVisible) || all[0] || null;
+    // Na interface nova (conta Pro), a caixa da tela inicial continua na página depois do envio, com o texto antigo,
+    // e parece visível com a aba em 2º plano (a animação que a esconde não roda). Preferimos a caixa VAZIA e a última.
+    const vis = all.filter(e => isVisible(e) && e.closest(INPUT_AREA));
+    const pool = vis.length ? vis : all.filter(isVisible);
+    const vazia = pool.filter(e => !clean(e.textContent));
+    return vazia.at(-1) || pool.at(-1) || all.at(-1) || null;
   }
   const SEND_LABEL = /^(enviar mensagem|enviar|send message|send|enviar mensaje)$/;
   function sendCandidates() {
@@ -333,7 +338,25 @@
     };
   }
 
+  // ---------- Monitor de rede ----------
+  // Cada envio ao Gemini gera uma requisição de geração. O PerformanceObserver registra quando ela TERMINA,
+  // só observando (não mexe nas requisições da página) — funciona com a aba em 2º plano, quando a tela pode não
+  // ser redesenhada. Não envolver XMLHttpRequest/fetch da página: testado, isso quebra o envio do Gemini.
+  // Nome conferido em 14/11/2026: a interface atual envia por geminiweb-pa.clients6.google.com/v1/processSession
+  // (a antiga usava .../StreamGenerate).
+  const STREAM = /StreamGenerate|\/v1\/processSession/i;
+  const net = { inicios: 0, fins: 0, ultimoFim: 0 }; // "inicios" fica em 0 (sem sinal de início); mantido para os diagnósticos
+  try {
+    const po = new PerformanceObserver(list => {
+      for (const e of list.getEntries()) if (STREAM.test(e.name)) { net.fins++; net.ultimoFim = Date.now(); }
+    });
+    po.observe({ type: "resource", buffered: false });
+  } catch (_) { /* sem PerformanceObserver */ }
+
   let stopRequested = false;
+  let pendente = null; // estado do último envio, para o "collect" ler a resposta sem reenviar
+
+  const queries = () => [...document.querySelectorAll("user-query")];
 
   async function ask({ text, image }) {
     stopRequested = false;
@@ -350,14 +373,17 @@
       if (imageAttached) await sleep(1500); // upload
     }
 
-    // Estado antes do envio. Contar só os blocos de resposta não basta: em conversas longas o Gemini remove
-    // os blocos antigos da tela (lista virtualizada) e a contagem não sobe; por isso guardamos também
-    // qual é o último bloco e o último pedido do usuário.
-    const before = responses().length;
-    const lastRespBefore = responses().at(-1) || null;
-    const queries = () => [...document.querySelectorAll("user-query")];
-    const queriesBefore = queries().length;
-    const lastQueryBefore = queries().at(-1) || null;
+    // Marcas de antes do envio (DOM, endereço e rede).
+    const st = {
+      before: responses().length,
+      lastRespBefore: responses().at(-1) || null,
+      queriesBefore: queries().length,
+      lastQueryBefore: queries().at(-1) || null,
+      urlBefore: location.href,
+      iniciosBefore: net.inicios,
+      finsBefore: net.fins,
+      imageAttached
+    };
 
     ed.focus();
     const sel = getSelection();
@@ -383,31 +409,27 @@
     if (!btn) return { erro: `Botão de enviar do Gemini não encontrado (a interface pode ter mudado). Texto na caixa: ${typed} caracteres.` };
     realClick(btn);
 
-    // 1) Confirma que a mensagem saiu: caixa esvaziou ou apareceu um pedido novo do usuário.
-    const sent = () => clean(editor()?.textContent).length < Math.min(typed, 20) ||
-      queries().length > queriesBefore || (queries().at(-1) || null) !== lastQueryBefore;
+    // 1) A mensagem saiu? Qualquer sinal basta. NÃO olhamos "a caixa atual": na interface nova a caixa da tela
+    //    inicial continua com o texto depois do envio. Usamos a caixa em que digitamos (ed), o endereço e a rede.
+    const sent = () => net.inicios > st.iniciosBefore || net.fins > st.finsBefore ||
+      !ed.isConnected || clean(ed.textContent).length < Math.min(typed, 20) ||
+      location.href !== st.urlBefore ||
+      queries().length > st.queriesBefore || (queries().at(-1) || null) !== st.lastQueryBefore ||
+      !!stopButton() || started(st);
     let t = Date.now();
-    while (!sent() && Date.now() - t < 6000) await sleep(300);
+    // Espera até 15 s antes de concluir que não saiu (evita reenviar e criar conversas duplicadas).
+    while (!sent() && Date.now() - t < 15000) await sleep(300);
     if (!sent()) {
-      // Segunda tentativa: Enter na caixa, depois clique de novo.
-      const e2 = editor();
-      e2?.focus();
+      // Só reenvia se NADA indicar envio: nenhuma requisição, mesmo endereço e texto ainda na caixa.
+      ed.focus();
       const kev = type => new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true });
-      e2?.dispatchEvent(kev("keydown")); e2?.dispatchEvent(kev("keypress")); e2?.dispatchEvent(kev("keyup"));
-      await sleep(1500);
-      // Último recurso: clica em cada candidato visível a "enviar" (pode haver mais de um na página da conta).
-      if (!sent()) {
-        for (const b of sendCandidates().filter(isVisible)) {
-          if (b.disabled || b.getAttribute("aria-disabled") === "true") continue;
-          realClick(b);
-          await sleep(1500);
-          if (sent()) break;
-        }
-      }
+      ed.dispatchEvent(kev("keydown")); ed.dispatchEvent(kev("keypress")); ed.dispatchEvent(kev("keyup"));
+      t = Date.now();
+      while (!sent() && Date.now() - t < 8000) await sleep(300);
       if (!sent()) {
         const d = sendDiagnostics(btn);
         return {
-          erro: `A mensagem não foi enviada ao Gemini (o texto continua na caixa: ${clean(editor()?.textContent).length} de ${typed} caracteres). ` +
+          erro: `A mensagem não foi enviada ao Gemini (nenhuma requisição saiu; o texto continua na caixa: ${clean(ed.textContent).length} de ${typed} caracteres). ` +
             `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}${d.botaoVisivel ? "" : " (invisível)"}${d.botaoNaAreaDaCaixa ? "" : " (fora da área da caixa)"}; ` +
             `caixas: ${d.caixas}; botões de enviar: ${d.botoesEnviar}.` +
             (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
@@ -417,23 +439,36 @@
         };
       }
     }
+    pendente = st;
+    return waitAndRead(st);
+  }
 
-    // 2) Espera a resposta começar: bloco novo (contagem ou identidade do último) ou o Gemini "pensando" (botão Parar).
+  // Resposta nova na tela: mais blocos, ou o último bloco é outro (lista virtualizada em conversas longas).
+  function started(st) {
+    return responses().length > st.before || (responses().at(-1) || null) !== st.lastRespBefore;
+  }
+
+  // 2) Espera a resposta começar e terminar, e lê o texto. Se a rede mostra a resposta pronta mas a tela não foi
+  //    redesenhada (aba em 2º plano), devolve precisaVisivel para a barra lateral mostrar a aba por um instante.
+  async function waitAndRead(st) {
     const start = Date.now();
     let sawStop = false;
-    const started = () => responses().length > before || (responses().at(-1) || null) !== lastRespBefore;
-    while (!started()) {
+    // A rede "ficou quieta": houve requisição de geração depois do envio e nenhuma nova há 5 s.
+    const redeQuieta = () => net.fins > st.finsBefore && Date.now() - net.ultimoFim > 5000;
+    while (!started(st)) {
       if (stopRequested) return { erro: "Interrompido." };
       if (stopButton()) sawStop = true;
-      // Enquanto o Gemini estiver gerando (botão Parar visível), espera até 5 min — modelos que raciocinam demoram.
-      const limite = sawStop ? 300000 : 90000;
+      if (redeQuieta() && document.hidden) return { precisaVisivel: true, enviada: true };
+      const limite = sawStop || net.inicios > st.iniciosBefore ? 300000 : 90000;
       if (Date.now() - start > limite) {
+        if (document.hidden && (net.inicios > st.iniciosBefore || net.fins > st.finsBefore)) return { precisaVisivel: true, enviada: true };
         return { erro: `O Gemini não começou a responder em ${Math.round(limite / 1000)} s ` +
-          `(mensagem enviada: sim; gerando: ${stopButton() ? "sim" : "não"}; respostas na tela: ${before} → ${responses().length}; página: ${location.pathname}).` };
+          `(mensagem enviada: sim; gerando: ${stopButton() ? "sim" : "não"}; respostas na tela: ${st.before} → ${responses().length}; ` +
+          `requisições: ${net.inicios - st.iniciosBefore} iniciadas / ${net.fins - st.finsBefore} concluídas; aba oculta: ${document.hidden ? "sim" : "não"}).` };
       }
       await sleep(400);
     }
-    // Espera terminar: sem botão de parar e texto estável.
+    // Espera terminar: sem botão de parar e texto estável (ou a rede já concluiu e o texto parou de mudar).
     let lastText = "", stableSince = Date.now();
     while (Date.now() - start < 300000) {
       if (stopRequested) { stopButton()?.click(); break; }
@@ -441,11 +476,24 @@
       const r = responses().at(-1);
       const t = r?.textContent || "";
       if (t !== lastText) { lastText = t; stableSince = Date.now(); continue; }
-      if (!stopButton() && Date.now() - stableSince > 1200 && t.trim()) break;
+      if ((!stopButton() || redeQuieta()) && Date.now() - stableSince > 1200 && t.trim()) break;
+      if (redeQuieta() && !t.trim() && document.hidden && Date.now() - stableSince > 4000) return { precisaVisivel: true, enviada: true };
     }
     const r = responses().at(-1);
     const md = r.querySelector("message-content .markdown, message-content") || r;
-    return { texto: toText(md), acoes: extractActions(md), imagem_anexada: imageAttached };
+    pendente = null;
+    return { texto: toText(md), acoes: extractActions(md), imagem_anexada: st.imageAttached, requisicoes: net.fins - st.finsBefore };
+  }
+
+  // Lê a resposta do último envio sem reenviar (usado depois de mostrar a aba do Gemini).
+  async function collect() {
+    if (!pendente) {
+      const r = responses().at(-1);
+      if (!r) return { erro: "Não há resposta do Gemini para ler." };
+      const md = r.querySelector("message-content .markdown, message-content") || r;
+      return { texto: toText(md), acoes: extractActions(md) };
+    }
+    return waitAndRead(pendente);
   }
 
   browser.runtime.onMessage.addListener(msg => {
@@ -460,6 +508,7 @@
       case "list_models": return listModels().catch(e => ({ erro: e.message || String(e) }));
       case "select_model": return selectModel(msg.args || {}).catch(e => ({ erro: e.message || String(e) }));
       case "ask": return ask(msg.args).catch(e => ({ erro: e.message || String(e) }));
+      case "collect": return collect().catch(e => ({ erro: e.message || String(e) }));
       case "stop": stopRequested = true; stopButton()?.click(); return Promise.resolve({ ok: true });
       default: return Promise.resolve({ erro: "comando desconhecido" });
     }

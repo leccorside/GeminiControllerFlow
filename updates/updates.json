@@ -3,16 +3,6 @@
                    "geminicontrollerflow@local":  {
                                                       "updates":  [
                                                                       {
-                                                                          "version":  "1.0.7",
-                                                                          "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.7.xpi",
-                                                                          "update_hash":  "sha256:4b8cf624c278e1a6e0a5dd37c4b766ea7dedf038b551114f233d26080633fa7d",
-                                                                          "applications":  {
-                                                                                               "gecko":  {
-                                                                                                             "strict_min_version":  "115.0"
-                                                                                                         }
-                                                                                           }
-                                                                      },
-                                                                      {
                                                                           "version":  "1.0.8",
                                                                           "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.8.xpi",
                                                                           "update_hash":  "sha256:fa6b22bae2b600a63af21ecfa6f1ca1017df563935cc1924c97c56e2a41f16d7",
@@ -46,6 +36,16 @@
                                                                           "version":  "1.0.11",
                                                                           "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.11.xpi",
                                                                           "update_hash":  "sha256:eb935981e2185a005138a4171b4ea087ecd919c46622f95a92d81d58590f41a6",
+                                                                          "applications":  {
+                                                                                               "gecko":  {
+                                                                                                             "strict_min_version":  "115.0"
+                                                                                                         }
+                                                                                           }
+                                                                      },
+                                                                      {
+                                                                          "version":  "1.0.12",
+                                                                          "update_link":  "https://raw.githubusercontent.com/leccorside/GeminiControllerFlow/main/updates/geminicontrollerflow-1.0.12.xpi",
+                                                                          "update_hash":  "sha256:f747819dec74bda9e2eb45f2ee448762cb66c8ab73d3d77b80fe920e02337769",
                                                                           "applications":  {
                                                                                                "gecko":  {
                                                                                                              "strict_min_version":  "115.0"

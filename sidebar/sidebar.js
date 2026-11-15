@@ -478,6 +478,18 @@ async function ensureGeminiTab({ fresh = false, activate = false } = {}) {
   throw new Error(t("geminiNotLoaded"));
 }
 
+// Ativa a aba do Gemini, lê a resposta pendente ("collect", sem reenviar) e volta para a aba em que o usuário trabalha.
+async function collectVisible() {
+  const voltarPara = runner.tabId;
+  try {
+    await browser.tabs.update(geminiTabId, { active: true });
+    await sleep(1200);
+    return await bridge("collect");
+  } finally {
+    if (voltarPara != null) await browser.tabs.update(voltarPara, { active: true }).catch(() => {});
+  }
+}
+
 function stripActionBlocks(text) {
   return text.replace(/```[a-z]*\n([\s\S]*?)```/g, (m, body) => {
     try {
@@ -536,6 +548,8 @@ async function runWeb(userText, ctx) {
         fallbackMessage = null;
         res = await bridge("ask", { text: message, image });
       }
+      // Respondeu pela rede, mas a aba oculta não redesenhou a tela: mostra a aba do Gemini por um instante e lê.
+      if (res && res.precisaVisivel && !abort.signal.aborted) res = await collectVisible();
     } finally { thinking.remove(); }
     fallbackMessage = null;
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");

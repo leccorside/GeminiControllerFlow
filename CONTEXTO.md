@@ -11,6 +11,17 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.12 (causa real do "não enviada": a verificação errava)
+
+- **Prova** (print da aba do Gemini da conta Pro, interface nova em inglês): a mensagem de instruções FOI enviada e o Gemini respondeu `{"tool":"click","args":{"ref":5}}`; o histórico tinha ~15 conversas "Busca de Vagas…", uma por tentativa. O envio sempre funcionou — a extensão concluía "não enviada" e desistia (e o reenvio por Enter/clique e o reenvio reduzido da 1.0.10 podem ter gerado conversas duplicadas).
+- **Por quê**: na interface nova a caixa da tela inicial continua no DOM com o texto depois do envio (outra caixa assume a conversa) e, com a aba em 2º plano, a animação que a esconde não roda — o diagnóstico "caixas: 1 visíveis de 2" batia com isso. A verificação lia `editor()` (essa caixa antiga) e via o texto. Além disso, com a aba oculta a tela pode não ser redesenhada (`user-query`/`model-response` não aparecem) — reproduzido sem login: em uma rodada a rede concluiu e a resposta não apareceu na tela.
+- **Correções**:
+  - `editor()` prefere a caixa visível **vazia** (e a última); a verificação de envio usa a caixa em que digitou (`ed`: desconectada ou esvaziada), mudança de endereço, `user-query` novo, botão Parar, resposta nova **e a rede**.
+  - **Rede**: `PerformanceObserver` conta o fim das requisições de geração. Conferido no Firefox: a interface atual envia por `geminiweb-pa.clients6.google.com/v1/processSession` (≈6 por resposta); `StreamGenerate` (antigo) também aceito. **Não** envolver `XMLHttpRequest`/`fetch` da página com `exportFunction`: testado, quebra o envio do Gemini (revertido).
+  - Reenvio só depois de 15 s **sem nenhum sinal** de envio (evita duplicatas).
+  - `waitAndRead`: se a rede concluiu, ficou quieta por 5 s e a tela não mostrou a resposta com a aba oculta, devolve `precisaVisivel`; a barra lateral (`collectVisible`) ativa a aba do Gemini por ~1 s, chama o novo comando `collect` (lê sem reenviar) e volta para a aba do usuário.
+- **Testes** (extensão real, Firefox headless, ~14 mil caracteres, aba oculta): en e pt-BR, 2 rodadas cada → todos OK em 9–13 s, 6 requisições contadas, sem pedir a aba visível antes da hora. O caminho `collect` com a aba ativada não foi exercitado de ponta a ponta (depende da tela não redesenhar).
+
 ### 14/11/2026 — versão 1.0.11 (caixa e botão de enviar visíveis)
 
 - **Erro relatado (1.0.10)**: "não foi enviada… 5457 de 5457 caracteres. Botão de enviar: 'Send message'. Nenhum aviso visível". Mostra que o reenvio reduzido também falhou, que a conta usa o Gemini **em inglês** e que o botão estava habilitado e sem aviso — o clique não chegou ao botão certo. O print da aba do Gemini citado pelo usuário não veio anexado.
