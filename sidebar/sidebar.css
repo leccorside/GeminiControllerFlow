@@ -136,6 +136,9 @@ a { color: var(--accent-2); }
   flex: none; width: 30px; height: 30px; border-radius: 8px; border: 0; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff;
 }
+.skills-list { display: flex; flex-direction: column; gap: 6px; }
+.skill-item { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; font-weight: 500; }
+.skill-item small { grid-column: 2; color: var(--muted); font-weight: 400; }
 .attach-btn {
   flex: none; width: 30px; height: 30px; border-radius: 50%; border: 0; display: grid; place-items: center;
   background: transparent; color: var(--muted);

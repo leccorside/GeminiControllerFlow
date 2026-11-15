@@ -167,10 +167,20 @@
     return `[${ref}] ${role} "${name}"${extra.length ? " " + extra.join(" ") : ""}`;
   }
 
+  // Plataforma do site (usado para ativar habilidades, ex.: WordPress).
+  function plataforma() {
+    const wp = !!(document.querySelector("meta[name=generator][content*='WordPress' i]") ||
+      document.querySelector("link[href*='/wp-content/'], script[src*='/wp-includes/'], script[src*='/wp-content/']") ||
+      document.getElementById("wpadminbar") || document.body?.classList.contains("wp-admin") ||
+      /\/wp-admin\//.test(location.pathname));
+    return wp ? { wordpress: true, painel: /\/wp-admin\//.test(location.pathname) } : {};
+  }
+
   function pageInfo() {
     return {
       url: location.href,
       titulo: document.title,
+      plataforma: plataforma(),
       rolagem: { y: Math.round(scrollY), altura_total: document.documentElement.scrollHeight },
       viewport: { largura: innerWidth, altura: innerHeight }
     };
@@ -426,12 +436,211 @@
     return { ...pageInfo(), texto: t.length > 15000 ? t.slice(0, 15000) + "\n…(truncado)" : t };
   }
 
+  // ---------- Contexto da página ----------
+  // O content script não enxerga as variáveis da página (wp, jQuery…). Executamos código no contexto da página
+  // pelo eval DA PÁGINA (window.wrappedJSObject.eval, no Firefox); o código devolve sempre uma string JSON.
+  function pageEval(code) {
+    const w = window.wrappedJSObject;
+    const r = w && typeof w.eval === "function" ? w.eval(code) : window.eval(code);
+    try { return typeof r === "string" ? JSON.parse(r) : r; } catch (_) { return r; }
+  }
+  // Para operações assíncronas da página: o código grava o resultado em window.__gcfJobs[id]; aqui esperamos.
+  async function pageJob(body, timeoutMs = 60000) {
+    const id = "j" + Date.now() + Math.random().toString(36).slice(2, 7);
+    pageEval(`(function(){ window.__gcfJobs = window.__gcfJobs || {}; var __id = ${JSON.stringify(id)};
+      window.__gcfJobs[__id] = null;
+      Promise.resolve().then(function(){ return (async function(){ ${body} })(); })
+        .then(function(v){ window.__gcfJobs[__id] = { ok: true, v: v === undefined ? null : v }; },
+              function(e){ window.__gcfJobs[__id] = { ok: false, erro: String(e && (e.message || e.code) || e) }; });
+      return "1"; })()`);
+    const fim = Date.now() + timeoutMs;
+    while (Date.now() < fim) {
+      await new Promise(r => setTimeout(r, 250));
+      const r = pageEval(`JSON.stringify((window.__gcfJobs || {})[${JSON.stringify(id)}] || null)`);
+      if (r) {
+        pageEval(`(function(){ delete window.__gcfJobs[${JSON.stringify(id)}]; return "1"; })()`);
+        if (!r.ok) throw new Error(r.erro);
+        return r.v;
+      }
+    }
+    throw new Error("A operação na página não terminou a tempo.");
+  }
+
+  // ---------- Habilidade WordPress ----------
+  // Usa a API do próprio editor (wp.data / wp.blocks), muito mais confiável que clicar no editor de blocos.
+  const WP_INFO = `(function(){
+    var r = { wordpress: !!window.wp || !!document.getElementById("wpadminbar") || document.body.classList.contains("wp-admin"), editor: null };
+    var ed = window.wp && wp.data && wp.data.select && wp.data.select("core/editor");
+    if (window.elementor || document.body.classList.contains("elementor-editor-active")) r.editor = "elementor";
+    else if (window.ET_Builder || document.getElementById("et-fb-app") || document.body.classList.contains("et-fb")) r.editor = "divi";
+    else if (window.vc || document.getElementById("wpb_visual_composer")) r.editor = "wpbakery";
+    else if (ed && ed.getCurrentPostType && ed.getCurrentPostType()) r.editor = "gutenberg";
+    else if (document.getElementById("post") && (document.getElementById("content") || window.tinymce)) r.editor = "classic";
+    if (r.editor === "gutenberg") {
+      r.tipo = ed.getCurrentPostType(); r.id = ed.getCurrentPostId();
+      r.titulo = ed.getEditedPostAttribute("title"); r.slug = ed.getEditedPostAttribute("slug");
+      r.status = ed.getEditedPostAttribute("status"); r.link = ed.getPermalink ? ed.getPermalink() : null;
+      var be = wp.data.select("core/block-editor");
+      r.blocos = (be.getBlocks() || []).map(function(b){ return b.name; }).slice(0, 80);
+      r.blocosDisponiveis = (wp.blocks.getBlockTypes() || []).length;
+      r.temCover = !!wp.blocks.getBlockType("core/cover"); r.temColunas = !!wp.blocks.getBlockType("core/columns");
+    }
+    if (document.querySelector("#elementor-switch-mode, #elementor-go-to-edit-page-link")) r.elementorDisponivel = true;
+    r.seo = window.wpseoScriptData || document.getElementById("wpseo_meta") || (window.wp && wp.data && wp.data.select("yoast-seo/editor")) ? "yoast"
+      : (window.rankMath || (window.wp && wp.data && wp.data.select("rank-math"))) ? "rankmath" : null;
+    var tema = document.body.className.match(/theme-([\\w-]+)/) || [];
+    r.temaClasse = tema[1] || null;
+    r.adminUrl = (window.ajaxurl || "").replace(/admin-ajax\\.php.*$/, "") || null;
+    return JSON.stringify(r); })()`;
+
+  function wpEditor() {
+    const r = pageEval(WP_INFO);
+    if (r.editor !== "gutenberg" && r.editor !== "classic") {
+      throw new Error(r.editor ? `Editor "${r.editor}" detectado: a ferramenta wordpress só edita Gutenberg/clássico. Pergunte ao usuário como prosseguir.`
+        : "Não estou num editor do WordPress. Abra {site}/wp-admin/post-new.php?post_type=page (ou a tela de edição da página).");
+    }
+    return r.editor;
+  }
+
+  async function wordpress(a = {}) {
+    const acao = a.acao || a.action;
+    const S = v => JSON.stringify(v == null ? "" : String(v));
+    switch (acao) {
+      case "info": {
+        const r = pageEval(WP_INFO);
+        if (r.editor === "gutenberg") {
+          try { r.tema = await pageJob(`var t = await wp.apiFetch({ path: "/wp/v2/themes?status=active" }); return t && t[0] ? (t[0].name && (t[0].name.rendered || t[0].name)) : null;`, 15000); }
+          catch (_) { /* sem permissão para listar temas */ }
+        }
+        return { ok: true, ...r };
+      }
+      case "get_content": {
+        const ed = wpEditor();
+        const html = ed === "gutenberg"
+          ? pageEval(`JSON.stringify(wp.data.select("core/editor").getEditedPostContent())`)
+          : pageEval(`JSON.stringify(window.tinymce && tinymce.get("content") && !tinymce.get("content").isHidden() ? tinymce.get("content").getContent() : (document.getElementById("content") || {}).value || "")`);
+        return { ok: true, editor: ed, conteudo: html.length > 30000 ? html.slice(0, 30000) + "\n…(truncado)" : html };
+      }
+      case "set_title": {
+        const ed = wpEditor();
+        if (ed === "gutenberg") pageEval(`(function(){ wp.data.dispatch("core/editor").editPost({ title: ${S(a.titulo)} }); return "1"; })()`);
+        else pageEval(`(function(){ var t = document.getElementById("title"); t.value = ${S(a.titulo)}; t.dispatchEvent(new Event("input", { bubbles: true })); return "1"; })()`);
+        return { ok: true, titulo: a.titulo };
+      }
+      case "set_slug": {
+        if (wpEditor() !== "gutenberg") throw new Error("set_slug só no editor de blocos; no clássico use o campo Slug da tela.");
+        pageEval(`(function(){ wp.data.dispatch("core/editor").editPost({ slug: ${S(a.slug)} }); return "1"; })()`);
+        return { ok: true, slug: a.slug };
+      }
+      case "set_content": {
+        const ed = wpEditor();
+        const html = String(a.html || "");
+        if (!html.trim()) throw new Error("Informe o html (marcação de blocos ou HTML).");
+        if (ed === "classic") {
+          const modo = a.modo === "acrescentar" ? "append" : "set";
+          pageEval(`(function(){ var h = ${S(html)}; var mce = window.tinymce && tinymce.get("content");
+            if (mce && !mce.isHidden()) { mce.setContent(${modo === "append" ? 'mce.getContent() + h' : 'h'}); mce.save(); }
+            else { var c = document.getElementById("content"); c.value = ${modo === "append" ? 'c.value + h' : 'h'}; }
+            return "1"; })()`);
+          return { ok: true, editor: ed, modo: a.modo || "substituir" };
+        }
+        const r = pageEval(`(function(){ var h = ${S(html)};
+          var blocks = /<!--\\s*wp:/.test(h) ? wp.blocks.parse(h) : wp.blocks.rawHandler({ HTML: h });
+          blocks = (blocks || []).filter(function(b){ return !(b.name === "core/freeform" && !String((b.attributes||{}).content||"").trim()); });
+          if (${JSON.stringify(a.modo === "acrescentar")}) wp.data.dispatch("core/block-editor").insertBlocks(blocks);
+          else wp.data.dispatch("core/block-editor").resetBlocks(blocks);
+          var invalid = []; (function walk(list){ list.forEach(function(b){ if (b.isValid === false) invalid.push(b.name); walk(b.innerBlocks || []); }); })(blocks);
+          return JSON.stringify({ blocos: blocks.length, tipos: blocks.map(function(b){ return b.name; }).slice(0, 40), invalidos: invalid }); })()`);
+        return { ok: true, editor: ed, modo: a.modo || "substituir", ...r,
+          aviso: r.invalidos && r.invalidos.length ? "Alguns blocos ficaram inválidos (marcação diferente da esperada pelo bloco); confira com get_content." : undefined };
+      }
+      case "set_seo": {
+        if (wpEditor() !== "gutenberg") throw new Error("set_seo só no editor de blocos.");
+        const r = pageEval(`(function(){ var t = ${S(a.titulo_seo)}, d = ${S(a.descricao)}, feitos = [];
+          try { var y = wp.data.dispatch("yoast-seo/editor"); if (y) {
+            if (t && y.updateData) { y.updateData({ title: t }); feitos.push("yoast:titulo"); }
+            if (d && y.updateData) { y.updateData({ description: d }); feitos.push("yoast:descricao"); } } } catch (e) {}
+          try { var rm = wp.data.dispatch("rank-math"); if (rm) {
+            if (t && rm.updateTitle) { rm.updateTitle(t); feitos.push("rankmath:titulo"); }
+            if (d && rm.updateDescription) { rm.updateDescription(d); feitos.push("rankmath:descricao"); } } } catch (e) {}
+          try { if (!feitos.length && (t || d)) { var m = {}; if (t) { m._yoast_wpseo_title = t; m.rank_math_title = t; } if (d) { m._yoast_wpseo_metadesc = d; m.rank_math_description = d; }
+            wp.data.dispatch("core/editor").editPost({ meta: m }); feitos.push("meta"); } } catch (e) {}
+          return JSON.stringify({ feitos: feitos }); })()`);
+        return { ok: r.feitos.length > 0, ...r, aviso: r.feitos.length ? undefined : "Nenhum plugin de SEO respondeu; preencha pelos campos do plugin na tela, se existirem." };
+      }
+      case "upload_media": {
+        if (!a.arquivo || !a.arquivo.data) throw new Error("Anexo não encontrado para enviar.");
+        const f = a.arquivo;
+        const r = await pageJob(`
+          var bin = atob(${S(f.data)}); var bytes = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          var fd = new FormData(); fd.append("file", new Blob([bytes], { type: ${S(f.type)} }), ${S(f.name)});
+          var m;
+          if (window.wp && wp.apiFetch) m = await wp.apiFetch({ path: "/wp/v2/media", method: "POST", body: fd });
+          else {
+            var nonce = (window.wpApiSettings && wpApiSettings.nonce) || "";
+            var root = (window.wpApiSettings && wpApiSettings.root) || (location.origin + "/wp-json/");
+            var res = await fetch(root + "wp/v2/media", { method: "POST", body: fd, credentials: "same-origin", headers: nonce ? { "X-WP-Nonce": nonce } : {} });
+            if (!res.ok) throw new Error("HTTP " + res.status + " ao enviar a mídia");
+            m = await res.json();
+          }
+          var alt = ${S(a.alt)};
+          if (alt && window.wp && wp.apiFetch) { try { await wp.apiFetch({ path: "/wp/v2/media/" + m.id, method: "POST", data: { alt_text: alt } }); } catch (e) {} }
+          return { id: m.id, url: m.source_url, alt: alt };`, 120000);
+        return { ok: true, ...r };
+      }
+      case "save": {
+        const ed = wpEditor();
+        if (ed === "classic") {
+          pageEval(`(function(){ var b = document.getElementById("save-post"); if (!b) throw new Error("Botão Salvar rascunho não encontrado (a página pode já estar publicada)."); b.click(); return "1"; })()`);
+          return { ok: true, editor: ed, aviso: "Rascunho salvo pelo botão do editor clássico; a página vai recarregar." };
+        }
+        const r = await pageJob(`
+          var sel = wp.data.select("core/editor"), dis = wp.data.dispatch("core/editor");
+          var st = sel.getEditedPostAttribute("status");
+          if (st === "publish" || st === "future" || st === "private") throw new Error("Esta página já está publicada (" + st + "): salvar mexeria numa página existente. Peça autorização ao usuário.");
+          if (st !== "draft") dis.editPost({ status: "draft" });
+          await dis.savePost();
+          for (var i = 0; i < 120 && sel.isSavingPost(); i++) await new Promise(function(r){ setTimeout(r, 250); });
+          if (sel.didPostSaveRequestFail && sel.didPostSaveRequestFail()) throw new Error("O WordPress recusou o salvamento.");
+          return { id: sel.getCurrentPostId(), status: sel.getEditedPostAttribute("status"),
+            preview: sel.getEditedPostPreviewLink ? sel.getEditedPostPreviewLink() : null,
+            editar: location.origin + location.pathname.replace(/post-new\\.php$/, "post.php") + "?post=" + sel.getCurrentPostId() + "&action=edit" };`, 60000);
+        return { ok: true, editor: ed, ...r };
+      }
+      case "preview": {
+        if (wpEditor() !== "gutenberg") throw new Error("preview só no editor de blocos; use o link de pré-visualização da tela.");
+        const link = pageEval(`JSON.stringify(wp.data.select("core/editor").getEditedPostPreviewLink() || "")`);
+        if (!link) throw new Error("Salve o rascunho antes (acao save) para ter a pré-visualização.");
+        const res = await fetch(link, { credentials: "include" });
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        // Só o conteúdo principal (sem cabeçalho/rodapé do tema), na ordem de preferência.
+        const main = ["main", ".entry-content", "article", ".wp-site-blocks"].map(s => doc.querySelector(s)).find(Boolean) || doc.body;
+        const texto = s => (s || "").replace(/\s+/g, " ").trim();
+        const h1 = main.querySelectorAll("h1").length;
+        return {
+          ok: res.ok, link, http: res.status,
+          avisoH1: h1 > 1 ? `${h1} títulos H1 na página: o tema já mostra o título da página como H1; use H2 no topo/hero (ou oculte o título) para ficar com um só.` : undefined,
+          titulos: [...main.querySelectorAll("h1, h2, h3")].slice(0, 60).map(h => `${h.tagName}: ${texto(h.textContent).slice(0, 90)}`),
+          imagens: [...main.querySelectorAll("img")].slice(0, 30).map(i => ({ src: (i.getAttribute("src") || "").slice(-80), alt: i.getAttribute("alt") || "" })),
+          botoes: [...main.querySelectorAll(".wp-block-button a, a.wp-element-button")].slice(0, 30).map(b => `${texto(b.textContent)} → ${b.getAttribute("href")}`),
+          revisar: (texto(main.textContent).match(/\[REVISAR\][^.\n]{0,60}/g) || []).slice(0, 30),
+          colunas: main.querySelectorAll(".wp-block-columns").length,
+          colunasEmpilhamNoCelular: main.querySelectorAll(".wp-block-columns:not(.is-not-stacked-on-mobile)").length
+        };
+      }
+      default:
+        throw new Error(`Ação desconhecida: ${acao}. Use info, get_content, set_title, set_slug, set_content, set_seo, upload_media, save ou preview.`);
+    }
+  }
+
   const handlers = {
     ping: () => ({ ok: true }),
     page_info: pageInfo,
     get_page: getPage,
     click, type_text: typeText, select_option: selectOption, press_key: pressKey,
-    scroll, hover, get_text: getText
+    scroll, hover, get_text: getText,
+    wordpress
   };
 
   window.__geminiControllerFlow = true;
@@ -440,10 +649,8 @@
     if (msg.lang) LANG = msg.lang;
     const fn = handlers[msg.cmd];
     if (!fn) return Promise.resolve({ erro: tr("unknown", { c: msg.cmd }) });
-    try {
-      return Promise.resolve(fn(msg.args || {}));
-    } catch (e) {
-      return Promise.resolve({ erro: e.message || String(e) });
-    }
+    // Erros (inclusive de funções assíncronas) voltam como { erro } — nunca como promise rejeitada, que faria a
+    // barra lateral reinjetar o script e REPETIR a ação (ex.: enviar a mesma mídia duas vezes).
+    return Promise.resolve().then(() => fn(msg.args || {})).catch(e => ({ erro: e.message || String(e) }));
   });
 })();

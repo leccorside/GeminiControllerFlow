@@ -11,6 +11,25 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.16 (habilidades + habilidade WordPress)
+
+- **Pedido**: o agente não entendia "crie uma página no WordPress". O usuário enviou um roteiro completo (entender a referência, identificar o editor, preparar imagens, montar seções, SEO, salvar como rascunho sem publicar, relatório final e regras de segurança), que virou o roteiro oficial da habilidade.
+- **Sistema de habilidades** (`sidebar/skills.js`): cada habilidade tem `detectar(contexto)` e `instrucoes`. Entra **uma vez por conversa** (`skillsSent`, zerado em "nova conversa"): no modo conta Google vai no início da mensagem ao Gemini; no modo API, junto do `systemInstruction`. Aviso "🧩 Habilidade ativada: …" no chat. Configurações → Habilidades liga/desliga (`skillsOff`).
+- **Detecção da plataforma** (`agent.js`, `pageInfo().plataforma`): meta generator WordPress, `/wp-content/`/`/wp-includes/`, `#wpadminbar`, `body.wp-admin`, `/wp-admin/`. A habilidade WordPress também ativa por palavras no pedido (wordpress, gutenberg, elementor, divi, wpbakery, yoast, rank math, woocommerce).
+- **Ferramenta `wordpress`** (ações: info, get_content, set_title, set_slug, set_content, set_seo, upload_media, save, preview), executada no contexto da página via `window.wrappedJSObject.eval` (`pageEval`) e, para operações assíncronas, `pageJob` (resultado em `window.__gcfJobs`):
+  - `set_content`: marcação de blocos (`wp.blocks.parse`) ou HTML comum (`wp.blocks.rawHandler`); substituir (`resetBlocks`) ou acrescentar (`insertBlocks`); informa blocos inválidos.
+  - `upload_media`: o anexo do pedido (por nome ou número; `runner.anexos`) vai para `/wp/v2/media` (`wp.apiFetch` ou fetch com nonce) e recebe o `alt_text`.
+  - `save`: **só rascunho** — não existe opção de publicar; se o post já estiver publicado/agendado/privado, **recusa** (não altera página existente).
+  - `preview`: busca a pré-visualização com `fetch` (cookies da sessão), sem abrir aba, e devolve títulos, imagens/alt, botões/links, marcas [REVISAR], colunas e aviso de H1 duplicado.
+  - `set_seo`: Yoast (`yoast-seo/editor`), Rank Math (`rank-math`) ou meta do post; informa o que funcionou.
+  - Editor clássico tem suporte básico (título, conteúdo, salvar rascunho); Elementor/Divi/WPBakery: a ferramenta para e o roteiro manda perguntar ao usuário.
+- `run_javascript` ganhou `page_context` (código síncrono no contexto da página, acessa `wp`, `jQuery`…).
+- Ações de leitura do WordPress (info, get_content, preview) não pedem confirmação no modo "toda ação".
+- **Corrigido**: erros de funções assíncronas do content script voltavam como promise rejeitada, e a barra lateral reinjetava o script e **repetia a ação** (ex.: mídia enviada duas vezes) → agora sempre voltam como `{ erro }`.
+- **Testes** (WordPress Playground — WordPress 7.1, tema Twenty Twenty-Five, logado como admin —, Edge headless via CDP com sessão no iframe do editor; o Firefox BiDi avaliava no topo em vez do iframe de outro domínio): detecção `wordpress/painel`; info (gutenberg, 115 blocos, tema); título; upload com alt (id 6); conteúdo com capa+H1, H2, colunas com H3 e imagem, botão "#"[REVISAR], 0 blocos inválidos; acrescentar; slug; SEO (meta); save → **draft** com link de pré-visualização; preview (só o conteúdo, aviso de 2 H1, imagem com alt, botão, [REVISAR], colunas empilham no celular); REST confirmou página 4 `draft`, slug e 13 blocos. Proteção: com a página publicada, `save` recusou e o título publicado ficou intacto.
+- Limites: o ajuste responsivo é conferido pela estrutura (colunas empilham), não por renderização em tela de celular; SEO via Yoast/Rank Math não foi testado (Playground sem esses plugins).
+- `web-ext lint`: 1 aviso (`eval` no `agent.js`, usado de propósito em `pageEval` para rodar código no contexto da página). A assinatura "unlisted" foi aprovada automaticamente mesmo assim; numa eventual publicação listada no AMO, esse ponto passaria por revisão.
+
 ### 15/11/2026 — versão 1.0.15 (anexar imagens e arquivos)
 
 - **Interface**: botão **+** à esquerda da caixa de texto (abre o seletor de arquivos, vários de uma vez), **Ctrl+V** de imagens/arquivos na caixa e **arrastar e soltar** na barra lateral (a caixa fica tracejada). Anexos pendentes aparecem acima da caixa (miniatura para imagem, extensão para os demais, ✕ para remover) e, ao enviar, dentro da mensagem do usuário. Limites: 10 anexos, 25 MB cada. Só anexos, sem texto → usa "Analise os arquivos anexados." Chaves novas nos 3 idiomas (97 no total).

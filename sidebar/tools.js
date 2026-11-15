@@ -121,13 +121,42 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: "run_javascript",
-    description: "Executa JavaScript na página. O código é o corpo de uma função assíncrona: use 'return' para devolver um valor serializável (uma expressão única sem return também é devolvida). Use para extrair dados ou para ações que as outras ferramentas não cobrem.",
-    parameters: { type: O, properties: { code: { type: S } }, required: ["code"] }
+    description: "Executa JavaScript na página. O código é o corpo de uma função assíncrona: use 'return' para devolver um valor serializável (uma expressão única sem return também é devolvida). Use para extrair dados ou para ações que as outras ferramentas não cobrem. Com page_context=true o código roda no contexto da PÁGINA (acessa variáveis do site como wp, jQuery) e deve ser síncrono.",
+    parameters: {
+      type: O,
+      properties: {
+        code: { type: S },
+        page_context: { type: B, description: "true para acessar variáveis da página (wp, jQuery…). Código síncrono." }
+      },
+      required: ["code"]
+    }
+  },
+  {
+    name: "wordpress",
+    description: "Habilidade WordPress: cria e edita páginas/posts pelo editor do próprio WordPress (Gutenberg ou clássico), sem precisar clicar no editor. NUNCA publica: salva só como rascunho.",
+    parameters: {
+      type: O,
+      properties: {
+        acao: { type: S, enum: ["info", "get_content", "set_title", "set_slug", "set_content", "set_seo", "upload_media", "save", "preview"],
+          description: "info: editor, post e blocos; get_content; set_title; set_slug; set_content (html em blocos <!-- wp:... --> ou HTML); set_seo; upload_media (envia um anexo do usuário à Biblioteca de Mídia); save (rascunho); preview (lê a pré-visualização sem abrir aba)." },
+        titulo: { type: S, description: "set_title" },
+        slug: { type: S, description: "set_slug" },
+        html: { type: S, description: "set_content: marcação de blocos do Gutenberg (preferida) ou HTML." },
+        modo: { type: S, enum: ["substituir", "acrescentar"], description: "set_content: substituir (padrão) ou acrescentar no fim." },
+        titulo_seo: { type: S, description: "set_seo" },
+        descricao: { type: S, description: "set_seo: meta descrição" },
+        anexo: { type: S, description: "upload_media: nome do arquivo anexado pelo usuário (ou o número dele na lista, começando em 1)." },
+        alt: { type: S, description: "upload_media: texto alternativo da imagem." }
+      },
+      required: ["acao"]
+    }
   }
 ];
 
 // Ferramentas que alteram algo e podem pedir confirmação.
-const ACTION_TOOLS = new Set(["click", "type_text", "select_option", "press_key", "navigate", "open_tab", "run_javascript"]);
+const ACTION_TOOLS = new Set(["click", "type_text", "select_option", "press_key", "navigate", "open_tab", "run_javascript", "wordpress"]);
+// Ações da ferramenta wordpress que só leem (não pedem confirmação).
+const WP_READ_ONLY = new Set(["info", "get_content", "preview"]);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -191,6 +220,7 @@ class ToolRunner {
       case "switch_tab": return t("lSwitchTab", { id: a.tab_id });
       case "open_tab": return t("lOpenTab", { url: a.url });
       case "run_javascript": return t("lJs");
+      case "wordpress": return t("lWp_" + (a.acao || "info"), { titulo: a.titulo, slug: a.slug, anexo: a.anexo });
       default: return name;
     }
   }
@@ -272,7 +302,39 @@ class ToolRunner {
         return { response: { ok: true, tab_id: t.id, url: t.url, titulo: t.title } };
       }
 
+      case "wordpress": {
+        const args = { ...a };
+        if (args.acao === "upload_media") {
+          // Resolve o anexo pelo nome (ou número) entre os anexos do pedido atual.
+          const lista = this.anexos || [];
+          const chave = String(args.anexo || "").trim().toLowerCase();
+          const idx = /^\d+$/.test(chave) ? Number(chave) - 1 : -1;
+          const f = idx >= 0 ? lista[idx] : lista.find(x => x.name.toLowerCase() === chave) || lista.find(x => x.name.toLowerCase().includes(chave));
+          if (!f) throw new Error(t("eNoAttachment", { nome: args.anexo || "?", lista: lista.map(x => x.name).join(", ") || "-" }));
+          args.arquivo = { name: f.name, type: f.type, data: f.data };
+        }
+        const r = await this.content("wordpress", args);
+        return { response: r };
+      }
+
       case "run_javascript": {
+        if (a.page_context) {
+          // Contexto da página: eval da página (Firefox: window.wrappedJSObject.eval). Código síncrono.
+          let body = String(a.code || "").trim();
+          const single = !/\breturn\b/.test(body) && !body.includes("\n") && !/;\s*\S/.test(body) &&
+            !/^(const|let|var|if|for|while|try|function|class)\b/.test(body);
+          if (single) body = `return (${body.replace(/;\s*$/, "")});`;
+          const src = `(function(){ try { var __v = (function(){\n${body}\n})(); return JSON.stringify({ ok: true, v: __v === undefined ? null : __v }); }
+            catch (e) { return JSON.stringify({ ok: false, erro: String(e && e.message || e) }); } })()`;
+          const pageCode = `(() => { const w = window.wrappedJSObject; const r = JSON.parse(w ? w.eval(${JSON.stringify(src)}) : eval(${JSON.stringify(src)}));
+            return r.ok ? r.v : { erro: r.erro }; })()`;
+          const [result] = await browser.tabs.executeScript(this.tabId, { code: pageCode });
+          if (result && result.erro) throw new Error(result.erro);
+          let out = result;
+          const s = typeof out === "string" ? out : JSON.stringify(out);
+          if (s && s.length > 15000) out = s.slice(0, 15000) + "…(truncado)";
+          return { response: { ok: true, resultado: out } };
+        }
         const code = `(async () => { return (${wrapAsExpression(a.code)}); })().then(v => {
           try { return typeof v === "string" ? v : JSON.parse(JSON.stringify(v === undefined ? null : v)); }
           catch (e) { return String(v); }

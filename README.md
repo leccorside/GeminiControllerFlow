@@ -64,7 +64,29 @@ Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinst
 
 - `get_page` lista os elementos interativos visíveis com referências `[n]` (ex.: `[12] button "Curtir"`), mais URL, título e rolagem; opcionalmente o texto da página.
 - As ações usam essas referências. Um contorno roxo pisca no elemento em que o Gemini age.
-- `screenshot` captura a área visível (no modo conta Google a imagem é colada no chat do Gemini; se o site não aceitar, ele segue só com `get_page`).
+- `screenshot` captura a área visível (no modo conta Google a imagem é anexada no chat do Gemini; se o site não aceitar, ele segue só com `get_page`).
+
+## Anexos
+
+Botão **+** ao lado da caixa de texto, **Ctrl+V** ou arrastar e soltar: imagens, PDFs, documentos e qualquer arquivo que o Gemini aceite (até 10 por pedido, 25 MB cada).
+
+## Habilidades
+
+Roteiros especializados que entram automaticamente quando o contexto pede (uma vez por conversa). Ligue/desligue em Configurações → Habilidades.
+
+### WordPress
+
+Ativa no painel/editor/site WordPress ou quando o pedido fala de WordPress, Gutenberg, Elementor etc. Exemplo: abra `wp-admin`, anexe prints e textos de referência e peça *"crie a página Consultoria com base nos anexos"*. O agente:
+
+1. analisa os anexos e lista as seções (textos que faltam ficam como **[REVISAR]**);
+2. abre Páginas > Adicionar nova e identifica o editor e o tema (se não for o editor de blocos — Elementor, Divi, WPBakery — para e pergunta);
+3. envia as imagens anexadas à Biblioteca de Mídia com texto alternativo (prints que são só referência viram espaço reservado);
+4. monta as seções em blocos do Gutenberg (hero, colunas, imagens, botões, cores, um único H1);
+5. define slug e, se houver Yoast/Rank Math, título SEO e meta descrição;
+6. **salva só como rascunho** (a ferramenta não tem opção de publicar e se recusa a salvar páginas já publicadas) e confere a pré-visualização por trás, sem trocar a sua tela;
+7. entrega o relatório: link da pré-visualização, seções, itens [REVISAR] e diferenças em relação à referência.
+
+Por baixo, usa a ferramenta `wordpress` (API do próprio editor: `wp.data`/`wp.blocks`), muito mais confiável que clicar no editor de blocos.
 
 ## Limitações
 

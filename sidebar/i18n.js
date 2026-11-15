@@ -108,7 +108,20 @@ const I18N = {
     attachTooMany: "Máximo de {n} anexos por pedido.",
     attachTooBig: "{nome} passa de {mb} MB e não foi anexado.",
     attachOnlyPrompt: "Analise os arquivos anexados.",
-    attachUnsupportedApi: "{nome}: tipo de arquivo não suportado no modo API (ignorado)."
+    attachUnsupportedApi: "{nome}: tipo de arquivo não suportado no modo API (ignorado).",
+    skillsTitle: "Habilidades",
+    skillActivated: "🧩 Habilidade ativada: {nome}",
+    skillDesc_wordpress: "Cria e edita páginas no WordPress (Gutenberg) a partir dos seus pedidos e anexos; salva só como rascunho.",
+    eNoAttachment: "Anexo \"{nome}\" não encontrado neste pedido. Anexos disponíveis: {lista}.",
+    lWp_info: "WordPress: verificando o editor",
+    lWp_get_content: "WordPress: lendo o conteúdo",
+    lWp_set_title: "WordPress: título \"{titulo}\"",
+    lWp_set_slug: "WordPress: slug \"{slug}\"",
+    lWp_set_content: "WordPress: montando o conteúdo",
+    lWp_set_seo: "WordPress: preenchendo o SEO",
+    lWp_upload_media: "WordPress: enviando {anexo} para a Mídia",
+    lWp_save: "WordPress: salvando rascunho",
+    lWp_preview: "WordPress: conferindo a pré-visualização"
   },
 
   en: {
@@ -208,7 +221,20 @@ const I18N = {
     attachTooMany: "Up to {n} attachments per request.",
     attachTooBig: "{nome} is larger than {mb} MB and was not attached.",
     attachOnlyPrompt: "Analyze the attached files.",
-    attachUnsupportedApi: "{nome}: file type not supported in API mode (skipped)."
+    attachUnsupportedApi: "{nome}: file type not supported in API mode (skipped).",
+    skillsTitle: "Skills",
+    skillActivated: "🧩 Skill enabled: {nome}",
+    skillDesc_wordpress: "Creates and edits WordPress pages (Gutenberg) from your requests and attachments; saves as draft only.",
+    eNoAttachment: "Attachment \"{nome}\" not found in this request. Available attachments: {lista}.",
+    lWp_info: "WordPress: checking the editor",
+    lWp_get_content: "WordPress: reading the content",
+    lWp_set_title: "WordPress: title \"{titulo}\"",
+    lWp_set_slug: "WordPress: slug \"{slug}\"",
+    lWp_set_content: "WordPress: building the content",
+    lWp_set_seo: "WordPress: filling in SEO",
+    lWp_upload_media: "WordPress: uploading {anexo} to the Media Library",
+    lWp_save: "WordPress: saving draft",
+    lWp_preview: "WordPress: checking the preview"
   },
 
   es: {
@@ -308,7 +334,20 @@ const I18N = {
     attachTooMany: "Máximo de {n} adjuntos por pedido.",
     attachTooBig: "{nome} supera los {mb} MB y no se adjuntó.",
     attachOnlyPrompt: "Analiza los archivos adjuntos.",
-    attachUnsupportedApi: "{nome}: tipo de archivo no compatible en el modo API (omitido)."
+    attachUnsupportedApi: "{nome}: tipo de archivo no compatible en el modo API (omitido).",
+    skillsTitle: "Habilidades",
+    skillActivated: "🧩 Habilidad activada: {nome}",
+    skillDesc_wordpress: "Crea y edita páginas en WordPress (Gutenberg) a partir de tus pedidos y adjuntos; guarda solo como borrador.",
+    eNoAttachment: "Adjunto \"{nome}\" no encontrado en este pedido. Adjuntos disponibles: {lista}.",
+    lWp_info: "WordPress: revisando el editor",
+    lWp_get_content: "WordPress: leyendo el contenido",
+    lWp_set_title: "WordPress: título \"{titulo}\"",
+    lWp_set_slug: "WordPress: slug \"{slug}\"",
+    lWp_set_content: "WordPress: armando el contenido",
+    lWp_set_seo: "WordPress: completando el SEO",
+    lWp_upload_media: "WordPress: subiendo {anexo} a la Biblioteca de medios",
+    lWp_save: "WordPress: guardando borrador",
+    lWp_preview: "WordPress: revisando la vista previa"
   }
 };
 

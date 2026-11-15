@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 
 const GEMINI_URL = "https://gemini.google.com/app";
-const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", apiLevel: "", webModel: "", webLevel: "", confirmMode: "js", maxSteps: 40 };
+const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", apiLevel: "", webModel: "", webLevel: "", confirmMode: "js", maxSteps: 40, skillsOff: [] };
 let settings = { ...DEFAULTS };
 let windowId = null;
 let runner = null;
@@ -72,6 +72,7 @@ async function loadSettings() {
   $("model").value = settings.model;
   $("confirmMode").value = settings.confirmMode;
   $("maxSteps").value = settings.maxSteps;
+  renderSkillsSettings();
   refreshEngineFields();
   updateBadge();
 }
@@ -162,6 +163,7 @@ async function saveSettings() {
     maxSteps: Math.min(Math.max(Number($("maxSteps").value) || DEFAULTS.maxSteps, 5), 200),
     webModel: settings.webModel || "",
     webLevel: settings.webLevel || "",
+    skillsOff: SKILLS.filter(sk => { const c = document.getElementById("skill_" + sk.id); return c && !c.checked; }).map(sk => sk.id),
     apiLevel: settings.apiLevel || ""
   };
   apiModelsCache = null;
@@ -285,10 +287,14 @@ async function updateTabContext() {
   } catch (_) { /* aba fechada */ }
 }
 
+// Habilidades já enviadas ao modelo nesta conversa (cada uma entra uma vez).
+let skillsSent = new Set();
+
 function newChat() {
   if (busy) abort?.abort();
   history = [];
   webFresh = true;
+  skillsSent = new Set();
   stepsBox = null;
   chat.replaceChildren();
   renderEmpty();
@@ -322,9 +328,10 @@ function retranslate() {
 }
 
 // ---------- Execução de ferramentas (comum aos dois motores) ----------
-function needsConfirm(name) {
+function needsConfirm(name, args = {}) {
   if (approveAll) return false;
   if (settings.confirmMode === "never") return false;
+  if (name === "wordpress" && WP_READ_ONLY.has(args.acao)) return false;
   if (settings.confirmMode === "all") return ACTION_TOOLS.has(name);
   return name === "run_javascript";
 }
@@ -333,7 +340,7 @@ function needsConfirm(name) {
 async function execTool(name, args) {
   const label = ToolRunner.label(name, args);
   if (abort.signal.aborted) return { response: { erro: "Interrompido pelo usuário." } };
-  if (needsConfirm(name)) {
+  if (needsConfirm(name, args)) {
     const ans = await askConfirm(label, name, args);
     if (ans === "all") approveAll = true;
     if (ans === "no") {
@@ -416,7 +423,7 @@ async function runApi(userText, ctx, files) {
       data = await geminiGenerate({
         apiKey: settings.apiKey,
         model: settings.model,
-        systemInstruction: API_SYSTEM_PROMPT(),
+        systemInstruction: API_SYSTEM_PROMPT() + apiSkillsText(),
         contents: buildContents(),
         tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
         thinkingLevel: settings.apiLevel,
@@ -589,8 +596,10 @@ async function runWeb(userText, ctx, files) {
   // Já manda o estado da página junto: o Gemini web segue melhor o protocolo quando tem contexto.
   // Texto simples e curto (no máx. ~4 mil caracteres): mensagens grandes demais podem não ser aceitas pelo Gemini da conta.
   let snapshot;
+  let paginaInfo = {};
   try {
     const page = await runner.content("get_page", { max_elements: 80 });
+    paginaInfo = { url: page.url, titulo: page.titulo, plataforma: page.plataforma || {} };
     let els = String(page.elementos || "");
     if (els.length > 3500) els = els.slice(0, 3500).replace(/\n[^\n]*$/, "") + "\n…(lista cortada; use get_page com query para procurar mais)";
     snapshot = `[ESTADO ATUAL DA PÁGINA — resultado automático de get_page]\nURL: ${page.url}\nTítulo: ${page.titulo}\nElementos:\n${els}`;
@@ -598,7 +607,9 @@ async function runWeb(userText, ctx, files) {
     snapshot = `[A extensão não consegue ler esta aba: ${e.message}]`;
   }
   const lembrete = "[LEMBRETE] Você só consegue ver ou mudar a página do usuário pelas ferramentas: se o pedido envolve a página, responda agora com o bloco JSON da próxima ação. Não pesquise na web por conta própria no lugar de agir na página.";
-  const prefixo = webFresh ? WEB_PROMPT() + "\n\n" : "";
+  const novas = activateSkills({ ...paginaInfo, texto: userText });
+  const habilidades = novas.map(sk => sk.instrucoes + "\n\n").join("");
+  const prefixo = (webFresh ? WEB_PROMPT() + "\n\n" : "") + habilidades;
   const nomes = (files || []).length
     ? `\n\n[ANEXOS DO USUÁRIO, já anexados a esta mensagem: ${files.map(f => f.name).join(", ")}. Leia-os para responder.]`
     : "";
@@ -658,6 +669,35 @@ async function runWeb(userText, ctx, files) {
   addEl("msg error", null, t("stepLimit", { n: settings.maxSteps }));
 }
 
+// ---------- Habilidades ----------
+// Detecta as habilidades que se aplicam, marca como enviadas e avisa no chat. Devolve as novas.
+function activateSkills(ctx) {
+  const novas = skillsFor(ctx, skillsSent, settings.skillsOff || []);
+  for (const sk of novas) {
+    skillsSent.add(sk.id);
+    addEl("msg note", null, t("skillActivated", { nome: sk.nome }));
+  }
+  return novas;
+}
+
+// Modo API: as instruções das habilidades ativas nesta conversa vão junto das instruções do sistema.
+function apiSkillsText() {
+  const ativas = SKILLS.filter(sk => skillsSent.has(sk.id));
+  return ativas.length ? "\n\n" + ativas.map(sk => sk.instrucoes).join("\n\n") : "";
+}
+
+function renderSkillsSettings() {
+  const box = document.getElementById("skillsList");
+  if (!box) return;
+  box.replaceChildren(...SKILLS.map(sk => {
+    const lab = el("label", "skill-item");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.id = "skill_" + sk.id; cb.checked = !(settings.skillsOff || []).includes(sk.id);
+    lab.append(cb, el("span", "", sk.nome), el("small", "", t("skillDesc_" + sk.id)));
+    return lab;
+  }));
+}
+
 // ---------- Execução de um pedido ----------
 async function runAgent(userText, files = []) {
   setBusy(true);
@@ -671,7 +711,13 @@ async function runAgent(userText, files = []) {
       throw new Error(t("activeIsGemini"));
     }
     const ctx = tab ? `\n\n[Aba atual: "${tab.title}" — ${tab.url}]` : "";
-    if (settings.engine === "api") await runApi(userText, ctx, files);
+    runner.anexos = files;
+    if (settings.engine === "api") {
+      let pi = {};
+      try { pi = await runner.content("page_info", {}); } catch (_) { /* página sem acesso */ }
+      activateSkills({ url: pi.url || (tab && tab.url) || "", titulo: pi.titulo || (tab && tab.title) || "", plataforma: pi.plataforma || {}, texto: userText });
+      await runApi(userText, ctx, files);
+    }
     else await runWeb(userText, ctx, files);
   } catch (e) {
     if (e.name === "AbortError") addEl("msg error", null, t("interrupted"));
