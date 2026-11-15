@@ -602,6 +602,8 @@ function renderModelItems(items) {
     const check = document.createElement("span"); check.className = "mi-check"; check.textContent = m.selecionado ? "✓" : "";
     const txt = document.createElement("span"); txt.className = "mi-text";
     const name = document.createElement("span"); name.className = "mi-name"; name.textContent = m.nome;
+    if (m.selo) { const bd = document.createElement("span"); bd.className = "mi-badge"; bd.textContent = m.selo; name.appendChild(bd); }
+    if (m.desabilitado) { const lk = document.createElement("span"); lk.className = "mi-lock"; lk.textContent = "🔒"; lk.title = t("modelLocked"); name.appendChild(lk); }
     txt.appendChild(name);
     if (m.descricao) { const d = document.createElement("span"); d.className = "mi-desc"; d.textContent = m.descricao; txt.appendChild(d); }
     b.append(txt, check);

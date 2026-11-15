@@ -11,13 +11,23 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.7 (correção do seletor de modelo)
+
+- **Erro**: na 1.0.6 o menu mostrava "Não consegui listar os modelos: O menu de modelos do Gemini não abriu." A ponte procurava os itens dentro de `.cdk-overlay-container`, mas o Gemini renderiza o menu em `gem-menu[role=menu]` (ligado ao botão por `aria-controls`), fora do overlay.
+- **Estrutura real** (inspecionada num Edge headless via CDP, sem login): botão `[data-test-id=bard-mode-menu-button]` (aria-label "Abrir seletor de modo. No momento: …"); itens `gem-menu-item[role=menuitemradio]` com `.label` (descrição: "Respostas rápidas", "Código e análise"…), `.sublabel` (modelo: "3.5 Flash Lite", "4 Argon"…), `.badge` ("Novo"), `aria-checked` (em uso) e `aria-disabled` (bloqueado, ícone `lock`). Há também um item `role=menuitem` "Fazer login", ignorado. Escape **não** fecha o menu; fecha clicando no botão de novo.
+- **Correção**: a ponte lê esses itens e monta nome = "Gemini " + sublabel (ex.: "Gemini 4 Argon"), descrição = label, selo = badge. O botão do Gemini mostra uma forma curta ("Flash-Lite"); a ponte guarda o nome completo do último modelo visto para devolver no `status`. Escolher modelo bloqueado dá erro claro.
+- Barra lateral: selo "Novo" e 🔒 nos modelos bloqueados (estilo do seletor do Antigravity). Nova chave `modelLocked` nos 3 idiomas.
+- **Teste** (Edge headless, sem login, injetando o `gemini-bridge.js` real): `list_models` devolveu os 4 modelos (Gemini 3.5 Flash Lite ✓, 4 Hydrogen, 4 Argon, 4 Carbon — os três bloqueados sem login), o menu fechou depois, `select_model` em bloqueado devolveu erro e em liberado funcionou; `status` passou a mostrar "Gemini 3.5 Flash Lite".
+- **Bug durante a edição**: gerar o código por `node -e` com template literal comeu as barras invertidas (`\s` virou `s`, `\b` virou backspace). Corrigido à mão; preferir Edit/Write para código com regex.
+- 1.0.7 assinada e colocada em `updates/`.
+
 ### 14/11/2026 — versão 1.0.6 (seletor de modelo)
 
 - Botão de modelo abaixo da caixa de texto (como nos assistentes de IDE), com menu suspenso: nome, descrição e ✓ no modelo ativo; itens indisponíveis aparecem desabilitados. Fica bloqueado enquanto uma tarefa roda.
 - **Modo conta Google**: a ponte ganhou `list_models` e `select_model`. Ela abre o seletor de modo do próprio gemini.google.com (`bard-mode-switcher button` e alternativas), lê os itens do menu (`.cdk-overlay-container [role=menuitem|menuitemradio|option]`) e clica no escolhido. O `status` passou a devolver o `modelo` atual (texto do botão). A escolha é salva (`webModel`) e reaplicada a cada conversa nova.
 - **Modo API**: o menu lista os modelos de `geminiListModels` (cache em memória, limpo ao salvar as configurações) e grava em `model`.
 - 9 chaves novas de tradução (88 no total, iguais nos 3 idiomas).
-- **Validado pelo usuário em 14/11/2026**: seletor e troca de modelo 100% funcionais com a conta Google logada (os seletores tolerantes da ponte funcionaram com o menu real do gemini.google.com).
+- ~~Validado pelo usuário~~: o registro anterior estava errado — o Firefox ainda estava na 1.0.5. Na 1.0.6 o menu não listava os modelos (corrigido na 1.0.7).
 - Pacote voltou a 49 KB (logo fora do `.xpi`). 1.0.6 assinada e colocada em `updates/`; a 1.0.5 instalada já tem `updateURL` e o `updates.json` está no GitHub (HTTP 200), então a 1.0.6 chega sozinha depois do push.
 
 ### 14/11/2026 — versão 1.0.5 (atualização automática)

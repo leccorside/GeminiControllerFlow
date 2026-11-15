@@ -110,77 +110,108 @@
   }
 
   // ---------- Seletor de modelo do gemini.google.com ----------
-  // O Gemini web troca de modelo por um menu ("Rápido", "Raciocínio", "Pro"...). Os seletores abaixo são tolerantes
-  // porque a interface muda com frequência: procuramos o botão do seletor e os itens do menu que ele abre.
+  // Estrutura conferida em 14/11/2026: botão [data-test-id=bard-mode-menu-button] (aria-controls -> gem-menu[role=menu]);
+  // itens gem-menu-item[role=menuitemradio] com .label (descrição, ex.: "Código e análise"), .sublabel (modelo, ex.: "4 Argon")
+  // e .badge ("Novo"); aria-checked = em uso; aria-disabled = bloqueado. Escape não fecha: fecha clicando no botão de novo.
+  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
+  let lastSelected = null; // { nome, botao } — nome do modelo em uso e o texto do botão naquele momento
+
   function modelButton() {
-    const direct = document.querySelector(
-      "bard-mode-switcher button, [data-test-id='bard-mode-menu-button'], button.input-area-switch, button[aria-haspopup][class*='mode']"
-    );
-    if (direct) return direct;
-    return buttons().find(b => b.getAttribute("aria-haspopup") &&
-      /(modelo|model|modo|mode)/i.test(labelOf(b) + " " + (b.closest("[class]")?.className || "")) &&
-      b.closest("input-area-v2, input-container, .input-area, chat-window"));
+    return document.querySelector("[data-test-id='bard-mode-menu-button'], bard-mode-switcher button, button.input-area-switch") ||
+      buttons().find(b => b.getAttribute("aria-haspopup") && /seletor de modo|mode picker|mode selector|selector de modo/i.test(labelOf(b)));
   }
 
-  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
-  const menuItems = () => [...document.querySelectorAll(
-    ".cdk-overlay-container [role=menuitem], .cdk-overlay-container [role=menuitemradio], .cdk-overlay-container [role=option], .cdk-overlay-container button.mat-mdc-menu-item"
-  )].filter(el => el.getBoundingClientRect().height > 0);
+  function menuEl(btn) {
+    const id = btn && btn.getAttribute("aria-controls");
+    return (id && document.getElementById(id)) || document.querySelector("gem-menu[role=menu]");
+  }
 
-  function closeMenu() {
-    document.querySelector(".cdk-overlay-backdrop")?.click();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+  function menuItems(btn) {
+    const menu = menuEl(btn);
+    const scope = menu || document;
+    let items = [...scope.querySelectorAll("gem-menu-item[role=menuitemradio], [role=menuitemradio]")];
+    if (!items.length) items = [...document.querySelectorAll(".cdk-overlay-container [role=menuitemradio], .cdk-overlay-container [role=option]")];
+    return items;
+  }
+
+  const isOpen = btn => btn.getAttribute("aria-expanded") === "true" || menuItems(btn).some(el => el.getBoundingClientRect().height > 0);
+
+  async function closeMenu(btn) {
+    if (btn && btn.getAttribute("aria-expanded") === "true") btn.click();
+    await sleep(150);
   }
 
   async function openMenu() {
     const btn = modelButton();
     if (!btn) throw new Error("Não encontrei o seletor de modelo do Gemini (a interface pode ter mudado).");
-    if (!menuItems().length) {
+    if (!isOpen(btn)) {
       btn.click();
-      for (let i = 0; i < 20 && !menuItems().length; i++) await sleep(100);
+      for (let i = 0; i < 30 && !menuItems(btn).length; i++) await sleep(100);
     }
-    const items = menuItems();
-    if (!items.length) { closeMenu(); throw new Error("O menu de modelos do Gemini não abriu."); }
-    return items;
+    const items = menuItems(btn);
+    if (!items.length) { await closeMenu(btn); throw new Error("O menu de modelos do Gemini não abriu."); }
+    return { btn, items };
   }
 
   function describeItem(el) {
-    const titleEl = el.querySelector(".mode-title, [class*='title'], .mat-mdc-menu-item-text > :first-child");
-    const lines = (el.innerText || el.textContent || "").split("\n").map(clean).filter(Boolean)
-      .filter(l => !/^(check|check_circle|done|lock|arrow_drop_down)$/i.test(l));
-    const nome = clean(titleEl?.innerText || titleEl?.textContent) || lines[0] || "";
-    const descricao = lines.filter(l => l !== nome).join(" — ");
-    const icons = [...el.querySelectorAll("mat-icon, .google-symbols")].map(i => clean(i.textContent));
-    const selecionado = el.getAttribute("aria-checked") === "true" || el.getAttribute("aria-selected") === "true" ||
-      /selected|is-selected|active/.test(el.className) || icons.some(i => /^(check|check_circle|done)$/.test(i));
-    const desabilitado = el.disabled || el.getAttribute("aria-disabled") === "true";
-    return { nome, descricao, selecionado, desabilitado };
+    const label = clean(el.querySelector(".label")?.textContent);
+    const sub = clean(el.querySelector(".sublabel")?.textContent);
+    const selo = clean(el.querySelector(".badge, .trailing-badge")?.textContent);
+    let nome, descricao;
+    if (sub) { nome = /gemini/i.test(sub) ? sub : "Gemini " + sub; descricao = label; }
+    else {
+      const lines = (el.innerText || el.textContent || "").split(/\n/).map(clean).filter(Boolean);
+      nome = label || lines[0] || ""; descricao = lines.filter(l => l !== nome && l !== selo).join(" — ");
+    }
+    return {
+      nome, descricao, selo,
+      id: el.getAttribute("data-mode-id") || "",
+      selecionado: el.getAttribute("aria-checked") === "true" || el.getAttribute("data-active") === "true",
+      desabilitado: el.getAttribute("aria-disabled") === "true"
+    };
   }
 
-  function currentModel() {
+  function buttonText() {
     const btn = modelButton();
-    return btn ? clean(btn.innerText || btn.textContent).replace(/\b(arrow_drop_down|expand_more|keyboard_arrow_down)\b/g, "").trim() : null;
+    if (!btn) return null;
+    const span = btn.querySelector(".logo-pill-label-container span, .input-area-switch-label span");
+    return clean(span?.textContent || btn.innerText || btn.textContent).replace(/\b(arrow_drop_down|expand_more|keyboard_arrow_down)\b/g, "").trim() || null;
+  }
+
+  // Nome amigável do modelo em uso (o botão mostra uma forma curta, ex.: "Flash-Lite").
+  function currentModel() {
+    const txt = buttonText();
+    if (lastSelected && lastSelected.botao === txt) return lastSelected.nome;
+    return txt;
   }
 
   async function listModels() {
-    const items = await openMenu();
+    const { btn, items } = await openMenu();
     const modelos = items.map(describeItem).filter(m => m.nome);
-    closeMenu();
-    await sleep(150);
+    await closeMenu(btn);
+    const sel = modelos.find(m => m.selecionado);
+    if (sel) lastSelected = { nome: sel.nome, botao: buttonText() };
     return { atual: currentModel(), modelos };
   }
 
   async function selectModel({ nome }) {
     const alvo = clean(nome).toLowerCase();
-    const items = await openMenu();
-    const item = items.find(el => describeItem(el).nome.toLowerCase() === alvo) ||
-      items.find(el => describeItem(el).nome.toLowerCase().includes(alvo));
-    if (!item) { closeMenu(); throw new Error(`Modelo "${nome}" não encontrado no menu do Gemini.`); }
-    if (describeItem(item).desabilitado) { closeMenu(); throw new Error(`O modelo "${nome}" não está disponível nesta conta.`); }
-    item.click();
-    await sleep(400);
-    if (menuItems().length) closeMenu();
-    return { ok: true, atual: currentModel() };
+    const { btn, items } = await openMenu();
+    const match = el => {
+      const d = describeItem(el);
+      return [d.nome, d.descricao, d.id].map(x => (x || "").toLowerCase());
+    };
+    const item = items.find(el => match(el).includes(alvo)) ||
+      items.find(el => match(el).some(x => x && (x.includes(alvo) || alvo.includes(x))));
+    if (!item) { await closeMenu(btn); throw new Error(`Modelo "${nome}" não encontrado no menu do Gemini.`); }
+    const d = describeItem(item);
+    if (d.desabilitado) { await closeMenu(btn); throw new Error(`O modelo "${d.nome}" está bloqueado nesta conta (faça login ou verifique o plano).`); }
+    const alvoEl = item.querySelector("gem-menu-item-content") || item;
+    alvoEl.click();
+    for (let i = 0; i < 20 && btn.getAttribute("aria-expanded") === "true"; i++) await sleep(100);
+    if (btn.getAttribute("aria-expanded") === "true") await closeMenu(btn);
+    lastSelected = { nome: d.nome, botao: buttonText() };
+    return { ok: true, atual: d.nome };
   }
 
   let stopRequested = false;

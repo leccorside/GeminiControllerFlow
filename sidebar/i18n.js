@@ -99,7 +99,8 @@ const I18N = {
     modelError: "Não consegui trocar o modelo: {e}",
     modelListError: "Não consegui listar os modelos: {e}",
     modelNeedKey: "Configure a chave da API para listar os modelos.",
-    modelDefault: "Gemini"
+    modelDefault: "Gemini",
+    modelLocked: "Bloqueado nesta conta (faça login ou verifique o plano)"
   },
 
   en: {
@@ -190,7 +191,8 @@ const I18N = {
     modelError: "Could not change the model: {e}",
     modelListError: "Could not list the models: {e}",
     modelNeedKey: "Set the API key to list the models.",
-    modelDefault: "Gemini"
+    modelDefault: "Gemini",
+    modelLocked: "Locked for this account (sign in or check your plan)"
   },
 
   es: {
@@ -281,7 +283,8 @@ const I18N = {
     modelError: "No pude cambiar el modelo: {e}",
     modelListError: "No pude listar los modelos: {e}",
     modelNeedKey: "Configura la clave de API para listar los modelos.",
-    modelDefault: "Gemini"
+    modelDefault: "Gemini",
+    modelLocked: "Bloqueado en esta cuenta (inicia sesión o revisa tu plan)"
   }
 };
 
