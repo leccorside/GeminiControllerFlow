@@ -11,6 +11,19 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.14 (Gemini em janela própria, sem trocar a aba do usuário)
+
+- **Resultado da 1.0.13**: funcionou de ponta a ponta (buscou vagas de assistente técnico no LinkedIn e listou os resultados), mas a aba do Gemini aparecia a cada passo. Pedido: a tela do usuário (ex.: LinkedIn) não pode mudar; tudo aparece só na barra lateral.
+- **Tentativa descartada — fingir visibilidade** (`content/gemini-visible.js` em `document_start`: `document.hidden=false`, `visibilityState="visible"`, `hasFocus()=true` via `wrappedJSObject`/`exportFunction`, e `requestAnimationFrame` com timer em aba oculta). Na página de teste funcionou (aba oculta, página "via" visível, resposta lida em 7 s), mas no Gemini real ficou **instável**: envios que antes funcionavam passaram a sair devagar ou não sair (provável espera por animações CSS, que o Firefox não roda em aba oculta). Removido.
+- **Solução**: o Gemini fica numa **janela própria do Firefox, atrás da janela do usuário** (mesma posição/tamanho com 30 px de margem). Para a página ela é visível de verdade; o usuário só vê a página dele. A aba fixada das versões antigas é desafixada e movida para essa janela (`moveGeminiToOwnWindow`); se não existir, `openGeminiWindow`. Depois de criar/mover, o foco volta para a janela do usuário. A extensão **nunca** troca a aba da janela do usuário. Janela minimizada → restaurada atrás (`restoreGeminiBehind`). O botão "Abrir o Gemini para fazer login" traz a janela à frente (ação pedida pelo usuário).
+- **Pré-requisito no Windows**: `widget.windows.window_occlusion_tracking.enabled = false` (adicionado ao `user.js` do perfil; vale ao reiniciar o Firefox). Sem isso o Firefox trata janela totalmente coberta como oculta. A própria Mozilla desliga essa preferência nas automações (`RecommendedPreferences.sys.mjs`, bug 1802473).
+- **Também corrigidos** (vistos na execução do LinkedIn):
+  - "el.click is not a function": o alvo virava um ícone SVG sob o ponto do clique; agora só troca por elemento HTML e usa evento `click` quando não há `.click()`.
+  - Mensagens com "[{ref}]" literal: a regex de `tr()` no `agent.js` tinha perdido as barras (`/{(w+)}/`) desde o passo dos idiomas; corrigida para `/\{(\w+)\}/`. Varredura: nenhum outro caractere de controle/regex quebrada nos scripts.
+  - "Elemento [n] não encontrado" com o campo de busca do LinkedIn (recriado pela página): cada referência guarda a identidade (tag, papel, nome, id, name, placeholder) e, se o elemento sumir, `findEquivalent` acha o equivalente visível (exige nome, id ou name+papel batendo).
+  - A rede (`processSession`) deixou de contar como prova de envio: falso positivo em teste.
+- **Testes** (extensão real, Firefox headless/BiDi): aba do Gemini fixada na janela principal → movida para janela própria; janela principal focada e aba ativa do usuário intacta antes e depois; página do Gemini `hidden: false`; ask OK em 5 s. Limite: o headless não tem oclusão de janelas do Windows — o efeito do `user.js` só se confirma no Firefox do usuário.
+
 ### 15/11/2026 — versão 1.0.13 (Gemini da conta só envia com a aba visível)
 
 - **Erro relatado (1.0.12)**: "não foi enviada (nenhuma requisição saiu…)", mas o print da aba do Gemini mostrava a mensagem enviada e respondida (`{"tool": "click", "ref": 5}`, sem `args`).

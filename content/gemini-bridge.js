@@ -418,8 +418,8 @@
     // 1) A mensagem saiu? Qualquer sinal basta. NÃO olhamos "a caixa atual": na interface nova a caixa da tela
     //    inicial continua com o texto depois do envio. Usamos a caixa em que digitamos (ed), o endereço e a rede.
     // Devolve o nome do primeiro sinal de envio encontrado (ou "" se nenhum).
+    // A rede NÃO entra aqui: processSession também aparece fora do envio (falso positivo visto em teste).
     const sinalEnvio = () =>
-      net.inicios > st.iniciosBefore || net.fins > st.finsBefore ? "rede" :
       !ed.isConnected ? "caixa-removida" :
       clean(ed.textContent).length < Math.min(typed, 20) ? "caixa-vazia" :
       location.href !== st.urlBefore ? "endereco" :

@@ -449,16 +449,19 @@ async function ensureGeminiTab({ fresh = false, activate = false } = {}) {
     tab = found.find(t => t.windowId === windowId) || found[0] || null;
   }
   if (!tab) {
-    tab = await browser.tabs.create({ url: GEMINI_URL, pinned: true, active: activate, windowId });
+    tab = await openGeminiWindow();
     fresh = false; // já abre numa conversa nova
-  } else if (fresh) {
-    await browser.tabs.update(tab.id, { url: GEMINI_URL });
-    await sleep(1500); // não deixar a página antiga responder ao status
+  } else {
+    tab = await moveGeminiToOwnWindow(tab);
+    if (fresh) {
+      await browser.tabs.update(tab.id, { url: GEMINI_URL });
+      await sleep(1500); // não deixar a página antiga responder ao status
+    }
   }
   geminiTabId = tab.id;
   if (activate) {
-    await browser.tabs.update(tab.id, { active: true });
-    await browser.windows.update(tab.windowId, { focused: true });
+    // Pedido explícito do usuário (ex.: fazer login): mostra a janela do Gemini na frente.
+    await browser.windows.update(tab.windowId, { state: "normal", focused: true });
   }
   // Espera a página e a ponte ficarem prontas.
   const end = Date.now() + 30000;
@@ -478,23 +481,63 @@ async function ensureGeminiTab({ fresh = false, activate = false } = {}) {
   throw new Error(t("geminiNotLoaded"));
 }
 
-// Ativa a aba do Gemini, lê a resposta pendente ("collect", sem reenviar) e volta para a aba em que o usuário trabalha.
-async function collectVisible() {
-  return withGeminiVisible(() => bridge("collect"));
+// ---------- Janela própria do Gemini ----------
+// O Gemini da conta logada só envia (e desenha a resposta) com a página VISÍVEL. Uma aba em 2º plano é oculta;
+// por isso o Gemini fica numa JANELA PRÓPRIA, ATRÁS da janela do usuário: para a página ela está visível, e o
+// usuário continua vendo só a página dele. Requer widget.windows.window_occlusion_tracking.enabled = false
+// (senão o Firefox no Windows trata a janela coberta como oculta) — configurado no user.js do perfil.
+// A extensão NUNCA troca a aba da janela do usuário.
+
+async function mainWindowBounds() {
+  const main = await browser.windows.get(windowId).catch(() => null);
+  if (!main || main.state !== "normal") return {};
+  return { left: main.left + 30, top: main.top + 30, width: Math.max(520, main.width - 60), height: Math.max(520, main.height - 60) };
 }
 
-// O Gemini da conta logada só envia (e às vezes só desenha a resposta) com a aba visível. Depois da primeira vez
-// em que isso acontece, os envios seguintes já são feitos com a aba do Gemini à frente, sem esperar 4 s.
-let geminiPrecisaVisivel = false;
-async function withGeminiVisible(fn) {
-  const voltarPara = runner.tabId;
-  try {
-    await browser.tabs.update(geminiTabId, { active: true });
-    await sleep(800);
-    return await fn();
-  } finally {
-    if (voltarPara != null) await browser.tabs.update(voltarPara, { active: true }).catch(() => {});
+async function focusMainWindow() {
+  await browser.windows.update(windowId, { focused: true }).catch(() => {});
+}
+
+async function openGeminiWindow() {
+  const w = await browser.windows.create({ url: GEMINI_URL, type: "normal", ...(await mainWindowBounds()) });
+  await focusMainWindow(); // a janela do Gemini fica atrás
+  return w.tabs[0];
+}
+
+// Se a aba do Gemini estiver numa janela com outras abas (ex.: a aba fixada das versões antigas), move para uma janela só dela.
+async function moveGeminiToOwnWindow(tab) {
+  const win = await browser.windows.get(tab.windowId, { populate: true }).catch(() => null);
+  if (win && win.tabs.length === 1 && tab.windowId !== windowId) {
+    if (win.state === "minimized") await restoreGeminiBehind(win.id);
+    return tab;
   }
+  if (tab.pinned) await browser.tabs.update(tab.id, { pinned: false }).catch(() => {});
+  const w = await browser.windows.create({ tabId: tab.id, type: "normal", ...(await mainWindowBounds()) });
+  await focusMainWindow();
+  return browser.tabs.get(w.tabs[0].id);
+}
+
+// Janela do Gemini minimizada fica oculta: restaura (atrás) e devolve o foco à janela do usuário.
+async function restoreGeminiBehind(winId) {
+  await browser.windows.update(winId, { state: "normal" }).catch(() => {});
+  await focusMainWindow();
+  await sleep(600);
+}
+
+// Garante que a janela do Gemini não está minimizada e que a aba dele é a ativa DA JANELA DELE; depois executa fn.
+async function withGeminiVisible(fn) {
+  const tab = await browser.tabs.get(geminiTabId).catch(() => null);
+  if (tab && tab.windowId !== windowId) {
+    const win = await browser.windows.get(tab.windowId).catch(() => null);
+    if (win && win.state === "minimized") await restoreGeminiBehind(win.id);
+    if (!tab.active) { await browser.tabs.update(tab.id, { active: true }); await sleep(400); }
+  }
+  return fn();
+}
+
+// Lê a resposta pendente ("collect", sem reenviar) depois de garantir a janela do Gemini visível.
+async function collectVisible() {
+  return withGeminiVisible(() => bridge("collect"));
 }
 
 function stripActionBlocks(text) {
@@ -548,17 +591,15 @@ async function runWeb(userText, ctx) {
     const thinking = addThinking();
     let res;
     try {
-      res = geminiPrecisaVisivel
-        ? await withGeminiVisible(() => bridge("ask", { text: message, image }))
-        : await bridge("ask", { text: message, image });
-      if (res && res.precisaVisivel && res.enviada === false) geminiPrecisaVisivel = true;
+      // A janela do Gemini (atrás da do usuário) precisa estar restaurada e com a aba dele ativa.
+      res = await withGeminiVisible(() => bridge("ask", { text: message, image }));
       // Não enviada e há versão menor: tenta de novo sem a leitura da página (a caixa é substituída, não somada).
       if (res && res.naoEnviada && fallbackMessage && fallbackMessage.length < message.length && !abort.signal.aborted) {
         message = fallbackMessage;
         fallbackMessage = null;
         res = await bridge("ask", { text: message, image });
       }
-      // Respondeu pela rede, mas a aba oculta não redesenhou a tela: mostra a aba do Gemini por um instante e lê.
+      // A página do Gemini ficou oculta (janela minimizada ou oclusão ativa): restaura a janela dele atrás e lê.
       if (res && res.precisaVisivel && !abort.signal.aborted) res = await collectVisible();
     } finally { thinking.remove(); }
     fallbackMessage = null;

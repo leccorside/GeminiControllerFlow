@@ -28,7 +28,7 @@
       noOption: "Opción \"{v}\" no encontrada.", unknown: "Comando desconocido: {c}"
     }
   };
-  const tr = (k, vars = {}) => ((MSG[LANG] || MSG["pt-BR"])[k] || k).replace(/{(w+)}/g, (m, x) => (vars[x] != null ? vars[x] : m));
+  const tr = (k, vars = {}) => ((MSG[LANG] || MSG["pt-BR"])[k] || k).replace(/\{(\w+)\}/g, (m, x) => (vars[x] != null ? vars[x] : m));
 
   const REF_ATTR = "data-gc-ref";
   const refs = new Map(); // ref -> Element
@@ -99,6 +99,10 @@
       (el.tagName === "INPUT" ? clean(el.value) : "");
   }
 
+  // Identidade de cada referência (tipo, papel, nome): sites como o LinkedIn recriam elementos (ex.: o campo de
+  // busca) entre a leitura e a ação; com ela achamos o equivalente na página nova.
+  const refInfo = new Map();
+
   function refFor(el) {
     let ref = el.getAttribute(REF_ATTR);
     if (!ref || refs.get(Number(ref)) !== el) {
@@ -106,7 +110,20 @@
       el.setAttribute(REF_ATTR, ref);
       refs.set(Number(ref), el);
     }
+    refInfo.set(Number(ref), { tag: el.tagName, role: roleOf(el), name: nameOf(el),
+      id: el.id || "", nameAttr: el.getAttribute("name") || "", placeholder: el.getAttribute("placeholder") || "" });
     return Number(ref);
+  }
+
+  function findEquivalent(info) {
+    const cands = [...document.querySelectorAll(INTERACTIVE_SELECTOR)].filter(e => e.tagName === info.tag && isVisible(e));
+    const score = e => (info.id && e.id === info.id ? 4 : 0) +
+      (info.nameAttr && e.getAttribute("name") === info.nameAttr ? 2 : 0) +
+      (info.placeholder && e.getAttribute("placeholder") === info.placeholder ? 2 : 0) +
+      (roleOf(e) === info.role ? 1 : 0) + (info.name && nameOf(e) === info.name ? 3 : 0);
+    let best = null, bestScore = 0;
+    for (const e of cands) { const sc = score(e); if (sc > bestScore) { best = e; bestScore = sc; } }
+    return bestScore >= 3 ? best : null; // exige nome, id ou name+papel batendo — evita agir no elemento errado
   }
 
   function getEl(ref) {
@@ -114,6 +131,10 @@
     let el = refs.get(n);
     if (!el || !el.isConnected) {
       el = document.querySelector(`[${REF_ATTR}="${n}"]`);
+      if (!el && refInfo.has(n)) {
+        el = findEquivalent(refInfo.get(n));
+        if (el) el.setAttribute(REF_ATTR, String(n));
+      }
       if (el) refs.set(n, el);
     }
     if (!el) throw new Error(tr("notFound", { ref }));
@@ -239,22 +260,29 @@
       prepare(el);
       [x, y] = center(el);
       // Se outro elemento cobre o centro (ex.: rótulo), clica nele mesmo — é o que um clique real faria.
+      // Ícones SVG (comuns no LinkedIn) não têm .click(): nesse caso mantém o próprio elemento interativo.
       const top = document.elementFromPoint(x, y);
-      if (top && (el.contains(top))) el = top;
+      if (top && el.contains(top) && top instanceof HTMLElement) el = top;
     } else if (x != null && y != null) {
       el = document.elementFromPoint(x, y);
       if (!el) throw new Error(tr("noElAt", { x, y }));
+      // Clique por coordenada caindo num ícone SVG: sobe para o elemento HTML clicável que o contém.
+      if (!(el instanceof HTMLElement)) el = el.closest(INTERACTIVE_SELECTOR) || el.closest("*:not(svg):not(path):not(use):not(g)") || el;
       highlight(el);
     } else {
       throw new Error(tr("refOrXY"));
     }
+    const doClick = () => {
+      if (typeof el.click === "function") el.click();
+      else mouse(el, "click", x, y, { detail: 1 });
+    };
     mouse(el, "pointerover", x, y); mouse(el, "mouseover", x, y);
     mouse(el, "pointerdown", x, y); mouse(el, "mousedown", x, y);
     if (typeof el.focus === "function") el.focus({ preventScroll: true });
     mouse(el, "pointerup", x, y); mouse(el, "mouseup", x, y);
-    el.click();
+    doClick();
     if (double) {
-      el.click();
+      doClick();
       mouse(el, "dblclick", x, y, { detail: 2 });
     }
     return { ok: true, clicou: describe(el.closest(INTERACTIVE_SELECTOR) || el) };
