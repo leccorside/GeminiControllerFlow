@@ -120,13 +120,59 @@
         return true;
       } catch (_) { return false; }
     };
-    root.querySelectorAll("code").forEach(c => tryParse(c.textContent));
+    // Tenta como veio; se falhar, conserta chaves/colchetes que o Gemini esqueceu de fechar (visto em 15/11/2026:
+    // um build grande do Elementor terminou em ]"} sem a última }, e a tarefa parava sem executar nada).
+    const tryAll = s => tryParse(s) || tryParse(fecharJson(s));
+    root.querySelectorAll("code").forEach(c => { if (/"tool"\s*:/.test(c.textContent)) tryAll(c.textContent); });
     if (!actions.length) {
-      // Plano B: JSON solto no texto.
-      const m = root.textContent.match(/\{\s*"tool"\s*:\s*"[^"]+"[\s\S]*?\}\s*\}/g);
-      if (m) m.forEach(tryParse);
+      // Plano B: JSON solto no texto. Recorta cada objeto que começa em {"tool" pelas chaves equilibradas
+      // (ignorando o que está dentro de strings); se não fechar até o fim, conserta.
+      const txt = root.textContent;
+      const re = /\{\s*"tool"\s*:/g;
+      let m;
+      while ((m = re.exec(txt))) {
+        const pedaco = recortarObjeto(txt, m.index);
+        tryAll(pedaco);
+        re.lastIndex = m.index + Math.max(1, pedaco.length);
+      }
     }
     return actions;
+  }
+
+  // Do índice "ini" (um "{"), devolve o texto até a chave que fecha o objeto; se nunca fechar, até o último
+  // fechamento ( } ] " ) — deixa de fora a frase que o Gemini escreve depois do bloco.
+  function recortarObjeto(s, ini) {
+    const r = recortarAte(s, ini);
+    if (r) return r;
+    const resto = s.slice(ini);
+    const ult = Math.max(resto.lastIndexOf("}"), resto.lastIndexOf("]"), resto.lastIndexOf('"'));
+    return ult > 0 ? resto.slice(0, ult + 1) : resto;
+  }
+  function recortarAte(s, ini) {
+    let prof = 0, str = false, esc = false;
+    for (let i = ini; i < s.length; i++) {
+      const c = s[i];
+      if (str) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') str = false; continue; }
+      if (c === '"') str = true;
+      else if (c === "{" || c === "[") prof++;
+      else if (c === "}" || c === "]") { prof--; if (prof === 0) return s.slice(ini, i + 1); }
+    }
+    return "";
+  }
+
+  // Fecha strings, colchetes e chaves que ficaram abertos no fim do JSON (na ordem certa).
+  function fecharJson(s) {
+    const pilha = [];
+    let str = false, esc = false;
+    const t = s.trim();
+    for (const c of t) {
+      if (str) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') str = false; continue; }
+      if (c === '"') str = true;
+      else if (c === "{") pilha.push("}");
+      else if (c === "[") pilha.push("]");
+      else if ((c === "}" || c === "]") && pilha.at(-1) === c) pilha.pop();
+    }
+    return t.replace(/,\s*$/, "") + (str ? '"' : "") + pilha.reverse().join("");
   }
 
   // ---------- Anexos (imagens e qualquer arquivo) ----------

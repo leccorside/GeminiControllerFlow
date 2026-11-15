@@ -235,7 +235,7 @@
       Object.assign(box.style, {
         position: "fixed", left: r.left - 3 + "px", top: r.top - 3 + "px",
         width: r.width + 6 + "px", height: r.height + 6 + "px",
-        border: "2px solid #8b5cf6", borderRadius: "6px", background: "rgba(139,92,246,0.12)",
+        border: "2px solid #22c55e", borderRadius: "6px", background: "rgba(34,197,94,0.12)",
         zIndex: 2147483647, pointerEvents: "none", transition: "opacity 0.6s ease"
       });
       document.documentElement.appendChild(box);
@@ -244,9 +244,20 @@
     } catch (_) { /* sem destaque */ }
   }
 
-  function prepare(el) {
+  // Cursor verde do "Gemini em Ação" (content/panel-host.js): vai até o ponto antes da ação, como uma pessoa.
+  const acao = () => (window.__gcfAcao && window.__gcfAcao.ativo() ? window.__gcfAcao : null);
+  async function apontar(x, y, clicar = false) {
+    const A = acao();
+    if (!A) return;
+    await A.cursorPara(x, y);
+    if (clicar) A.cliqueVisual(x, y);
+  }
+
+  async function prepare(el, clicar = false) {
     el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
     highlight(el);
+    const [x, y] = center(el);
+    await apontar(x, y, clicar);
   }
 
   function mouse(el, type, x, y, extra = {}) {
@@ -263,11 +274,11 @@
     return [r.left + r.width / 2, r.top + r.height / 2];
   }
 
-  function click({ ref, x, y, double = false }) {
+  async function click({ ref, x, y, double = false }) {
     let el;
     if (ref != null) {
       el = getEl(ref);
-      prepare(el);
+      await prepare(el, true);
       [x, y] = center(el);
       // Se outro elemento cobre o centro (ex.: rótulo), clica nele mesmo — é o que um clique real faria.
       // Ícones SVG (comuns no LinkedIn) não têm .click(): nesse caso mantém o próprio elemento interativo.
@@ -279,6 +290,7 @@
       // Clique por coordenada caindo num ícone SVG: sobe para o elemento HTML clicável que o contém.
       if (!(el instanceof HTMLElement)) el = el.closest(INTERACTIVE_SELECTOR) || el.closest("*:not(svg):not(path):not(use):not(g)") || el;
       highlight(el);
+      await apontar(x, y, true);
     } else {
       throw new Error(tr("refOrXY"));
     }
@@ -331,10 +343,10 @@
     }
   }
 
-  function typeText({ ref, text = "", clear = true, submit = false }) {
+  async function typeText({ ref, text = "", clear = true, submit = false }) {
     const el = ref != null ? getEl(ref) : document.activeElement;
     if (!el || el === document.body) throw new Error(tr("fieldRef"));
-    prepare(el);
+    await prepare(el, true);
     el.focus();
     if (el.matches("input,textarea")) {
       setNativeValue(el, clear ? text : el.value + text);
@@ -369,9 +381,9 @@
     return { ok: true, campo: describe(el), conteudo_atual: el.type === "password" ? "(oculto)" : clean(val, 300) };
   }
 
-  function selectOption({ ref, value }) {
+  async function selectOption({ ref, value }) {
     const el = getEl(ref);
-    prepare(el);
+    await prepare(el, true);
     if (el.tagName !== "SELECT") throw new Error(tr("notSelect"));
     const v = String(value).toLowerCase();
     const opt = [...el.options].find(o => o.value.toLowerCase() === v) ||
@@ -384,9 +396,9 @@
     return { ok: true, selecionado: opt.text.trim() };
   }
 
-  function pressKey({ key: keyName, ref, ctrl = false, shift = false, alt = false, meta = false }) {
+  async function pressKey({ key: keyName, ref, ctrl = false, shift = false, alt = false, meta = false }) {
     const target = ref != null ? getEl(ref) : (document.activeElement || document.body);
-    if (ref != null) { prepare(target); target.focus?.(); }
+    if (ref != null) { await prepare(target); target.focus?.(); }
     const mods = { ctrlKey: ctrl, shiftKey: shift, altKey: alt, metaKey: meta };
     if (keyName === "Enter" && !ctrl && !shift && !alt && !meta) submitFrom(target);
     else key(target, keyName, mods);
@@ -403,9 +415,9 @@
     return null;
   }
 
-  function scroll({ direction = "down", amount, ref }) {
+  async function scroll({ direction = "down", amount, ref }) {
     if (ref != null && !direction) {
-      prepare(getEl(ref));
+      await prepare(getEl(ref));
       return { ok: true, ...pageInfo() };
     }
     const target = ref != null ? (scrollable(getEl(ref)) || window) : window;
@@ -414,7 +426,7 @@
     const map = { down: [0, px], up: [0, -px], right: [px, 0], left: [-px, 0] };
     if (direction === "top") target.scrollTo({ top: 0, behavior: "instant" });
     else if (direction === "bottom") target.scrollTo({ top: 1e9, behavior: "instant" });
-    else if (direction === "to_element") { prepare(getEl(ref)); }
+    else if (direction === "to_element") { await prepare(getEl(ref)); }
     else {
       const [dx, dy] = map[direction] || map.down;
       target.scrollBy({ left: dx, top: dy, behavior: "instant" });
@@ -422,9 +434,9 @@
     return { ok: true, ...pageInfo() };
   }
 
-  function hover({ ref }) {
+  async function hover({ ref }) {
     const el = getEl(ref);
-    prepare(el);
+    await prepare(el);
     const [x, y] = center(el);
     for (const t of ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"]) mouse(el, t, x, y);
     return { ok: true, alvo: describe(el) };
@@ -792,6 +804,18 @@
     };
   }
 
+  // WordPress/Elementor trabalham pela API do editor (sem cliques): o cursor verde vai até a área de edição para
+  // mostrar onde a página está sendo montada.
+  async function apontarEditor(cmd, args) {
+    if ((cmd !== "wordpress" && cmd !== "elementor") || !acao()) return;
+    if (/^(info|get_content|get_structure|preview)$/.test(args.acao || "")) return;
+    const area = document.querySelector("#elementor-preview-iframe, iframe[name=editor-canvas], .editor-styles-wrapper, .block-editor-writing-flow");
+    if (!area || !isVisible(area)) return;
+    const r = area.getBoundingClientRect();
+    const x = r.left + Math.min(r.width / 2, 260), y = r.top + Math.min(r.height / 2, 220);
+    await apontar(x, y, true);
+  }
+
   const handlers = {
     ping: () => ({ ok: true }),
     page_info: pageInfo,
@@ -810,6 +834,9 @@
     if (!fn) return Promise.resolve({ erro: tr("unknown", { c: msg.cmd }) });
     // Erros (inclusive de funções assíncronas) voltam como { erro } — nunca como promise rejeitada, que faria a
     // barra lateral reinjetar o script e REPETIR a ação (ex.: enviar a mesma mídia duas vezes).
-    return Promise.resolve().then(() => fn(msg.args || {})).catch(e => ({ erro: e.message || String(e) }));
+    return Promise.resolve()
+      .then(() => apontarEditor(msg.cmd, msg.args || {}))
+      .then(() => fn(msg.args || {}))
+      .catch(e => ({ erro: e.message || String(e) }));
   });
 })();

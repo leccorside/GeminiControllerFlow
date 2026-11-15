@@ -85,11 +85,22 @@ browser.runtime.onMessage.addListener((m, sender) => {
   // A página (re)carregou: o host pergunta se deve mostrar o painel.
   if (m.gcfPanel === "query") {
     const token = painelAberto.get(tabId);
-    return Promise.resolve(token ? { open: true, url: PANEL_URL + "#" + token } : { open: false });
+    const acao = emAcao.has(tabId) ? { acao: true, label: emAcao.get(tabId) } : {};
+    return Promise.resolve(token ? { open: true, url: PANEL_URL + "#" + token, ...acao } : { open: false, ...acao });
   }
   // Botão X do painel.
   if (m.gcfPanel === "closeMe" && tabId != null) { fecharPainel(tabId); return Promise.resolve({ ok: true }); }
   return undefined;
 });
 
-browser.tabs.onRemoved.addListener(tabId => painelAberto.delete(tabId));
+// ---------- "Gemini em Ação" ----------
+// tabId -> rótulo. O motor liga ao começar uma tarefa e desliga ao terminar; a página mostra a borda verde e o
+// aviso (content/panel-host.js). Guardado aqui para reaparecer quando a página navega no meio da tarefa.
+const emAcao = new Map();
+window.gcfAcao = (tabId, on, label) => {
+  if (tabId == null) return;
+  if (on) emAcao.set(tabId, label || "Gemini em Ação"); else emAcao.delete(tabId);
+  browser.tabs.sendMessage(tabId, { gcfPanel: "acao", on: !!on, label }).catch(() => { /* página sem o host */ });
+};
+
+browser.tabs.onRemoved.addListener(tabId => { painelAberto.delete(tabId); emAcao.delete(tabId); });

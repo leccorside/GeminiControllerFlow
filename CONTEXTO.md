@@ -11,6 +11,19 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.20 ("Gemini em Ação" e JSON de ação quebrado)
+
+- **Pedido**: borda verde sutil na página + aviso "Gemini em Ação" no topo enquanto o agente controla a página, e cursor verde em tempo real onde ele clica, "como uma pessoa montando a página".
+  - `content/panel-host.js` (já roda em todas as páginas): Shadow DOM fechado com `pointer-events:none` (moldura verde pulsando, pílula "Gemini em Ação", cursor SVG verde com transição de 0,45 s e onda no clique). A moldura respeita o painel (`--painel: 420px`). Expõe `window.__gcfAcao` (`cursorPara`, `cliqueVisual`, `ativo`) — o `content/agent.js` injetado divide o mesmo contexto de content script.
+  - `content/agent.js`: `prepare()` virou assíncrono e leva o cursor ao centro do elemento antes de click/type/select/hover/press/scroll; clique por coordenada também. WordPress/Elementor (ações que alteram) apontam a área do editor. Contorno de destaque passou de roxo para verde.
+  - `background.js`: `emAcao` (tabId → rótulo) e `window.gcfAcao(tabId, on, label)`; o `query` do host devolve `acao` para a moldura voltar depois de a página navegar no meio da tarefa.
+  - `sidebar/sidebar.js` (motor): `marcarAcao(tabId)` liga ao começar o pedido, acompanha troca de aba (`switch_tab`/`open_tab`) após cada ferramenta e desliga no `finally`. Novo texto `geminiAtWork` nos 3 idiomas.
+  - Teste de ponta a ponta (Firefox headless, extensão real): durante o pedido "hover no link + clique no H1" a moldura e o rótulo apareceram com `--painel: 420px`, o cursor foi até o link (print conferido), e tudo sumiu ao terminar.
+- **Bug relatado**: o Gemini enviou um `elementor build` enorme e a tarefa parou sem montar. **Causa**: o JSON terminava em `]"}` — faltava a `}` final, `JSON.parse` falhava e a ação não era reconhecida (o bloco aparecia como texto). **Correção**:
+  - `content/gemini-bridge.js`: `fecharJson` fecha strings/colchetes/chaves pendentes; `recortarObjeto` recorta o objeto `{"tool"...` por chaves equilibradas (fora de strings) e, se nunca fechar, até o último `} ] "` (sem a frase seguinte). Testado com o caso real.
+  - `sidebar/sidebar.js`: se a resposta tem `"tool":` mas nenhuma ação foi lida, pede ao Gemini para reenviar o bloco válido (até 2 vezes), sugerindo dividir em partes. Novo texto `invalidActionRetry`.
+  - `sidebar/skills.js`: no Elementor, montar páginas grandes em partes de até 5 seções (1ª "substituir", demais "acrescentar").
+
 ### 15/11/2026 — versão 1.0.19 (resposta vazia com modelo que pensa; sem notificações do Gemini)
 
 - **Bug relatado**: com Gemini 3.1 Pro, pedido de página no Elementor parou após "Elementor: verificando o editor" com "(o Gemini não respondeu nada)", e chegou uma **notificação do sistema** do Gemini com o bloco `{"tool": "elementor", "args": {"acao": "info"}}`.

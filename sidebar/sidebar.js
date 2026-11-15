@@ -416,8 +416,19 @@ async function execTool(name, args) {
     ui.fail(msg);
     return { response: { erro: msg } };
   } finally {
+    marcarAcao(runner.tabId); // o agente pode ter trocado/aberto outra aba
     updateTabContext();
   }
+}
+
+// ---------- "Gemini em Ação" (borda verde + aviso na página em que o agente trabalha) ----------
+let acaoTab = null;
+function marcarAcao(tabId) {
+  const fn = HOST && window.parent && window.parent.gcfAcao;
+  if (typeof fn !== "function" || tabId === acaoTab) return;
+  if (acaoTab != null) fn(acaoTab, false);
+  acaoTab = tabId;
+  if (tabId != null) fn(tabId, true, t("geminiAtWork"));
 }
 
 // ---------- Motor API ----------
@@ -701,6 +712,7 @@ async function runWeb(userText, ctx, files) {
     }
   }
 
+  let jsonRetries = 0;
   for (let step = 0; step < settings.maxSteps; step++) {
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
     const thinking = addThinking();
@@ -725,6 +737,15 @@ async function runWeb(userText, ctx, files) {
     if (res.erro) throw new Error(res.erro);
     if (res.avisoAnexos) addEl("msg note", null, res.avisoAnexos);
 
+    // Bloco de ação que não deu para ler (JSON quebrado/cortado mesmo depois do conserto da ponte): em vez de parar,
+    // pede ao Gemini para reenviar o bloco válido (até 2 vezes por pedido).
+    if (!res.acoes?.length && /"tool"\s*:/.test(res.texto || "") && jsonRetries < 2) {
+      jsonRetries++;
+      addEl("msg note", null, t("invalidActionRetry"));
+      message = "ERRO: o bloco de ação da sua última resposta não é um JSON válido (provavelmente faltou fechar uma chave } ou colchete ], ou o texto foi cortado). " +
+        "Reenvie AGORA só o bloco ```json``` completo e válido da mesma ação, com todas as chaves fechadas. Se for grande (ex.: secoes_json do Elementor), divida: monte a página em partes (modo \"substituir\" na primeira e \"acrescentar\" nas seguintes).";
+      continue;
+    }
     const visible = stripActionBlocks(res.texto || "");
     if (visible) { addEl("msg model", renderMarkdown(visible)); stepsBox = null; }
     if (!res.acoes?.length) {
@@ -791,6 +812,7 @@ async function runAgent(userText, files = []) {
   if (files.length) bolha.appendChild(renderAttachChips(files, false));
   try {
     runner.tabId = sessao.tabId;
+    marcarAcao(sessao.tabId);
     const tab = await browser.tabs.get(sessao.tabId).catch(() => null);
     if (tab) { runner.windowId = tab.windowId; windowId = tab.windowId; }
     const ctx = tab ? `\n\n[Aba atual: "${tab.title}" — ${tab.url}]` : "";
@@ -810,6 +832,7 @@ async function runAgent(userText, files = []) {
     if (settings.engine === "web" && geminiPort) {
       try { const st = await bridge("status"); if (st && /\/app\/[\w-]+/.test(st.url || "")) sessao.geminiUrl = st.url; } catch (_) { /* quadro recarregando */ }
     }
+    marcarAcao(null);
     setBusy(false);
     abort = null;
     // Se o usuário está vendo outra aba, a sessão dela passa a ser a dona do estado.

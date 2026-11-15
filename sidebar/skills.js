@@ -82,7 +82,7 @@ Monte o conteúdo inteiro numa chamada set_content (ou poucas, com "acrescentar"
 FLUXO ELEMENTOR (sites que usam o Elementor)
 1. Na tela Páginas > Adicionar nova (editor de blocos), use a ferramenta "wordpress": set_title, set_slug, set_seo, envie as imagens com upload_media e salve (save) — SEM conteúdo de blocos. Guarde o id devolvido.
 2. Abra o editor do Elementor: navigate para {site}/wp-admin/post.php?post={id}&action=elementor e rode {"tool":"elementor","args":{"acao":"info"}} (modo "containers" ou "secoes").
-3. Monte tudo com {"tool":"elementor","args":{"acao":"build","secoes_json":"[...]"}} (modo "substituir" limpa a página; "acrescentar" adiciona no fim). Formato de secoes_json (lista de seções, de cima para baixo):
+3. Monte tudo com {"tool":"elementor","args":{"acao":"build","secoes_json":"[...]"}} (modo "substituir" limpa a página; "acrescentar" adiciona no fim). Página com MUITAS seções: monte em partes de até 5 seções por chamada (a 1ª com "substituir", as seguintes com "acrescentar") — um JSON gigante costuma sair cortado ou com uma chave } faltando e não é executado. Confira que todas as chaves e colchetes do bloco estão fechados. Formato de secoes_json (lista de seções, de cima para baixo):
 [{"fundo":"#0b1f3a","padding":96,"altura_minima":480,"largura":"total","imagem_fundo":{"id":6,"url":"..."},
   "colunas":[ [ {"tipo":"titulo","texto":"Título do topo","nivel":"h1","alinhamento":"centro","cor":"#ffffff","tamanho":48},
                 {"tipo":"texto","html":"<p>Subtítulo</p>","alinhamento":"centro","cor":"#e5e7eb"},
