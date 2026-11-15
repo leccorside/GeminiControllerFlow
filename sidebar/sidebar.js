@@ -506,16 +506,21 @@ async function runWeb(userText, ctx) {
     addEl("msg error", null, t("notLoggedIn"));
   }
   // Já manda o estado da página junto: o Gemini web segue melhor o protocolo quando tem contexto.
+  // Texto simples e curto (no máx. ~4 mil caracteres): mensagens grandes demais podem não ser aceitas pelo Gemini da conta.
   let snapshot;
   try {
-    const page = await runner.content("get_page", {});
-    snapshot = `[ESTADO ATUAL DA PÁGINA — resultado automático de get_page]\n${compact(page, 9000)}`;
+    const page = await runner.content("get_page", { max_elements: 80 });
+    let els = String(page.elementos || "");
+    if (els.length > 3500) els = els.slice(0, 3500).replace(/\n[^\n]*$/, "") + "\n…(lista cortada; use get_page com query para procurar mais)";
+    snapshot = `[ESTADO ATUAL DA PÁGINA — resultado automático de get_page]\nURL: ${page.url}\nTítulo: ${page.titulo}\nElementos:\n${els}`;
   } catch (e) {
     snapshot = `[A extensão não consegue ler esta aba: ${e.message}]`;
   }
-  let message = (webFresh ? WEB_PROMPT() + "\n\n" : "") +
-    `[PEDIDO DO USUÁRIO]\n${userText}${ctx}\n\n${snapshot}\n\n` +
-    "[LEMBRETE] Você só consegue ver ou mudar a página do usuário pelas ferramentas: se o pedido envolve a página, responda agora com o bloco JSON da próxima ação. Não pesquise na web por conta própria no lugar de agir na página.";
+  const lembrete = "[LEMBRETE] Você só consegue ver ou mudar a página do usuário pelas ferramentas: se o pedido envolve a página, responda agora com o bloco JSON da próxima ação. Não pesquise na web por conta própria no lugar de agir na página.";
+  const prefixo = webFresh ? WEB_PROMPT() + "\n\n" : "";
+  let message = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${ctx}\n\n${snapshot}\n\n${lembrete}`;
+  // Versão reduzida (sem a leitura da página) para o caso de o Gemini não aceitar a mensagem completa.
+  let fallbackMessage = `${prefixo}[PEDIDO DO USUÁRIO]\n${userText}${ctx}\n\n${lembrete} Comece com get_page para ler a página.`;
   webFresh = false;
   let image = null;
 
@@ -525,7 +530,14 @@ async function runWeb(userText, ctx) {
     let res;
     try {
       res = await bridge("ask", { text: message, image });
+      // Não enviada e há versão menor: tenta de novo sem a leitura da página (a caixa é substituída, não somada).
+      if (res && res.naoEnviada && fallbackMessage && fallbackMessage.length < message.length && !abort.signal.aborted) {
+        message = fallbackMessage;
+        fallbackMessage = null;
+        res = await bridge("ask", { text: message, image });
+      }
     } finally { thinking.remove(); }
+    fallbackMessage = null;
     if (abort.signal.aborted) throw new DOMException("abortado", "AbortError");
     if (!res) throw new Error(t("geminiTabGone"));
     if (res.erro) throw new Error(res.erro);

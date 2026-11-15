@@ -11,6 +11,15 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.10 (mensagem não enviada ao Gemini da conta)
+
+- **Erro relatado (1.0.9)**: "A mensagem não foi enviada ao Gemini (o texto continua na caixa: 13665 de 13708 caracteres)". O texto entra na caixa, mas o clique em Enviar (e a nova tentativa com Enter + clique) não envia — **só com a conta logada**.
+- **Não reproduzido sem login, nem como extensão real**: Firefox headless com a extensão instalada via WebDriver BiDi (`webExtension.install`, cópia de teste com um background que dispara o `ask` pelo content script, com a aba do Gemini em 2º plano): mensagem curta OK (17 s) e de ~14 mil caracteres OK (13–17 s). A automação não abre páginas `moz-extension://` em aba (mesmo com `web_accessible_resources`), por isso o disparo pelo background.
+- **Hipótese**: o Gemini da conta recusa mensagens grandes (limite do plano/aviso) ou mostra algo na tela que bloqueia o envio.
+- **Mudanças**: (1) o 1º envio ficou menor — a leitura da página vai em texto simples (URL, título, até 80 elementos, cortada em ~3,5 mil caracteres) em vez de JSON indentado de até 9 mil; (2) se o Gemini não aceitar, a extensão reenvia **sem** a leitura da página (pedindo para começar com `get_page`); (3) o erro de não envio agora traz o diagnóstico da tela do Gemini — rótulo e estado do botão de enviar, avisos visíveis perto da caixa (`role=alert`, snack-bar, classes error/warning/limit/hint/counter) e janela aberta.
+- Teste de regressão (extensão real no Firefox, mensagem longa): OK.
+- **Pendente**: o usuário testar com a conta; se ainda falhar, o erro mostrará o aviso do Gemini.
+
 ### 14/11/2026 — versão 1.0.9 (erro "O Gemini não começou a responder em 60 s")
 
 - **Erro relatado** com a conta logada, no 1º pedido ("procure vagas relacionadas a desenvolvimento web…").

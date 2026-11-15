@@ -277,6 +277,26 @@
     return { ok: true, atual: d.nome, nivel: nivelEscolhido };
   }
 
+  // O que a página do Gemini mostra quando o envio não acontece: estado do botão, avisos e janelas abertas.
+  function sendDiagnostics(btn) {
+    const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const textos = sel => [...document.querySelectorAll(sel)].filter(visible)
+      .map(el => clean(el.innerText || el.textContent)).filter(t => t && t.length < 300);
+    const area = document.querySelector("input-area-v2, input-container") || document.body;
+    const avisos = [...new Set([
+      ...textos("[role=alert], [aria-live=assertive], mat-error, .mat-mdc-snack-bar-label, simple-snack-bar, .snackbar, .error-message"),
+      ...[...area.querySelectorAll("[class*=error], [class*=warning], [class*=limit], [class*=hint], [class*=counter]")]
+        .filter(visible).map(el => clean(el.innerText || el.textContent)).filter(t => t && t.length < 300)
+    ])].slice(0, 4);
+    const dlg = [...document.querySelectorAll("[role=dialog], mat-dialog-container, .cdk-overlay-pane")].find(visible);
+    return {
+      botao: btn ? clean(btn.getAttribute("aria-label") || btn.innerText) : "nenhum",
+      desabilitado: !!btn && (btn.disabled || btn.getAttribute("aria-disabled") === "true"),
+      avisos,
+      dialogo: dlg ? clean(dlg.innerText || dlg.textContent).slice(0, 200) : ""
+    };
+  }
+
   let stopRequested = false;
 
   async function ask({ text, image }) {
@@ -339,7 +359,15 @@
       await sleep(1500);
       if (!sent()) { sendButton()?.click(); await sleep(2000); }
       if (!sent()) {
-        return { erro: `A mensagem não foi enviada ao Gemini (o texto continua na caixa: ${clean(editor()?.textContent).length} de ${typed} caracteres). Abra a aba do Gemini e veja se há algum aviso, limite atingido ou janela aberta.` };
+        const d = sendDiagnostics(btn);
+        return {
+          erro: `A mensagem não foi enviada ao Gemini (o texto continua na caixa: ${clean(editor()?.textContent).length} de ${typed} caracteres). ` +
+            `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}.` +
+            (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
+            (d.dialogo ? ` Janela aberta: ${d.dialogo}` : ""),
+          diagnostico: d,
+          naoEnviada: true
+        };
       }
     }
 
