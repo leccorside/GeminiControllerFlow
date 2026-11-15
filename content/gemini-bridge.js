@@ -294,7 +294,15 @@
       if (imageAttached) await sleep(1500); // upload
     }
 
+    // Estado antes do envio. Contar só os blocos de resposta não basta: em conversas longas o Gemini remove
+    // os blocos antigos da tela (lista virtualizada) e a contagem não sobe; por isso guardamos também
+    // qual é o último bloco e o último pedido do usuário.
     const before = responses().length;
+    const lastRespBefore = responses().at(-1) || null;
+    const queries = () => [...document.querySelectorAll("user-query")];
+    const queriesBefore = queries().length;
+    const lastQueryBefore = queries().at(-1) || null;
+
     ed.focus();
     const sel = getSelection();
     const range = document.createRange();
@@ -305,6 +313,10 @@
       ed.dispatchEvent(new InputEvent("input", { bubbles: true }));
     }
     await sleep(300);
+    const typed = clean(ed.textContent).length;
+    if (!typed && clean(text)) {
+      return { erro: "Não consegui escrever na caixa de mensagem do Gemini (ela continuou vazia). Recarregue a aba do Gemini e tente de novo." };
+    }
 
     let btn;
     for (let i = 0; i < 40; i++) {
@@ -312,14 +324,38 @@
       if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") break;
       await sleep(250);
     }
-    if (!btn) return { erro: "Botão de enviar do Gemini não encontrado (a interface pode ter mudado)." };
+    if (!btn) return { erro: `Botão de enviar do Gemini não encontrado (a interface pode ter mudado). Texto na caixa: ${typed} caracteres.` };
     btn.click();
 
-    // Espera aparecer a nova resposta.
+    // 1) Confirma que a mensagem saiu: caixa esvaziou ou apareceu um pedido novo do usuário.
+    const sent = () => clean(editor()?.textContent).length < Math.min(typed, 20) ||
+      queries().length > queriesBefore || (queries().at(-1) || null) !== lastQueryBefore;
+    let t = Date.now();
+    while (!sent() && Date.now() - t < 6000) await sleep(300);
+    if (!sent()) {
+      // Segunda tentativa: Enter na caixa, depois clique de novo.
+      const e2 = editor();
+      e2?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+      await sleep(1500);
+      if (!sent()) { sendButton()?.click(); await sleep(2000); }
+      if (!sent()) {
+        return { erro: `A mensagem não foi enviada ao Gemini (o texto continua na caixa: ${clean(editor()?.textContent).length} de ${typed} caracteres). Abra a aba do Gemini e veja se há algum aviso, limite atingido ou janela aberta.` };
+      }
+    }
+
+    // 2) Espera a resposta começar: bloco novo (contagem ou identidade do último) ou o Gemini "pensando" (botão Parar).
     const start = Date.now();
-    while (responses().length <= before) {
+    let sawStop = false;
+    const started = () => responses().length > before || (responses().at(-1) || null) !== lastRespBefore;
+    while (!started()) {
       if (stopRequested) return { erro: "Interrompido." };
-      if (Date.now() - start > 60000) return { erro: "O Gemini não começou a responder em 60 s." };
+      if (stopButton()) sawStop = true;
+      // Enquanto o Gemini estiver gerando (botão Parar visível), espera até 5 min — modelos que raciocinam demoram.
+      const limite = sawStop ? 300000 : 90000;
+      if (Date.now() - start > limite) {
+        return { erro: `O Gemini não começou a responder em ${Math.round(limite / 1000)} s ` +
+          `(mensagem enviada: sim; gerando: ${stopButton() ? "sim" : "não"}; respostas na tela: ${before} → ${responses().length}; página: ${location.pathname}).` };
+      }
       await sleep(400);
     }
     // Espera terminar: sem botão de parar e texto estável.

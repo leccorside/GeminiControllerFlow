@@ -11,6 +11,15 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 14/11/2026 — versão 1.0.9 (erro "O Gemini não começou a responder em 60 s")
+
+- **Erro relatado** com a conta logada, no 1º pedido ("procure vagas relacionadas a desenvolvimento web…").
+- **Não reproduzido sem login**: com a ponte real no gemini.google.com, todos os cenários responderam — Edge em 1º plano (4 s), Edge com a aba oculta (6 s), Edge com mensagem de ~15,5 mil caracteres (5 s), **Firefox headless via WebDriver BiDi** com a aba oculta (9 s) e oculta + mensagem longa (17 s). Ou seja: aba em 2º plano e tamanho do primeiro envio não são a causa.
+- **Causas prováveis (com conta)**: (a) a ponte só considerava a resposta iniciada quando o **número** de `model-response` aumentava — em conversa longa o Gemini virtualiza a lista e remove blocos antigos, então a contagem não sobe; (b) modelos que raciocinam (Argon/Carbon) podem levar mais de 60 s até criar o bloco, com o botão "Parar resposta" já visível; (c) a mensagem podia nem ter sido enviada (aviso, limite, janela) e o erro não dizia.
+- **Correção** em `ask()`: confirma o envio (caixa esvaziou ou novo `user-query`), com segunda tentativa por Enter e novo clique; erro próprio se o texto não entrar na caixa ou não for enviado. Resposta iniciada = contagem maior **ou** último bloco diferente do anterior; enquanto o botão Parar estiver visível espera até 5 min (senão 90 s). O erro de tempo agora traz diagnóstico (enviada, gerando, respostas antes → depois, caminho da página).
+- Testes repetidos com a ponte nova (Firefox oculto, Firefox oculto + longo, Edge): todos OK. **Pendente**: confirmar com a conta do usuário; se falhar, a mensagem de erro nova indica em que etapa parou.
+- Scripts de teste (no scratchpad da sessão): `cdp-ask-test.mjs` (Edge/CDP) e `bidi-firefox-ask.mjs` (Firefox headless/BiDi, perfil temporário).
+
 ### 14/11/2026 — atualização poucos minutos depois do push
 
 - Pedido: a extensão procurar atualização sozinha logo depois do push. **Não é possível pela extensão**: `runtime.requestUpdateCheck` não existe no Firefox (MDN browser-compat-data: `version_added: false`). Instalar o `.xpi` por conta própria exigiria o clique em "Adicionar".
