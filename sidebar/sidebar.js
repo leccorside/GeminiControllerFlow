@@ -480,11 +480,18 @@ async function ensureGeminiTab({ fresh = false, activate = false } = {}) {
 
 // Ativa a aba do Gemini, lê a resposta pendente ("collect", sem reenviar) e volta para a aba em que o usuário trabalha.
 async function collectVisible() {
+  return withGeminiVisible(() => bridge("collect"));
+}
+
+// O Gemini da conta logada só envia (e às vezes só desenha a resposta) com a aba visível. Depois da primeira vez
+// em que isso acontece, os envios seguintes já são feitos com a aba do Gemini à frente, sem esperar 4 s.
+let geminiPrecisaVisivel = false;
+async function withGeminiVisible(fn) {
   const voltarPara = runner.tabId;
   try {
     await browser.tabs.update(geminiTabId, { active: true });
-    await sleep(1200);
-    return await bridge("collect");
+    await sleep(800);
+    return await fn();
   } finally {
     if (voltarPara != null) await browser.tabs.update(voltarPara, { active: true }).catch(() => {});
   }
@@ -541,7 +548,10 @@ async function runWeb(userText, ctx) {
     const thinking = addThinking();
     let res;
     try {
-      res = await bridge("ask", { text: message, image });
+      res = geminiPrecisaVisivel
+        ? await withGeminiVisible(() => bridge("ask", { text: message, image }))
+        : await bridge("ask", { text: message, image });
+      if (res && res.precisaVisivel && res.enviada === false) geminiPrecisaVisivel = true;
       // Não enviada e há versão menor: tenta de novo sem a leitura da página (a caixa é substituída, não somada).
       if (res && res.naoEnviada && fallbackMessage && fallbackMessage.length < message.length && !abort.signal.aborted) {
         message = fallbackMessage;

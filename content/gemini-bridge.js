@@ -110,7 +110,13 @@
       try {
         const v = JSON.parse(s.trim());
         const list = Array.isArray(v) ? v : [v];
-        for (const a of list) if (a && typeof a.tool === "string") actions.push({ tool: a.tool, args: a.args || {} });
+        for (const a of list) {
+          if (!a || typeof a.tool !== "string") continue;
+          // Aceita também o formato "achatado" que o Gemini às vezes usa: {"tool": "click", "ref": 5}.
+          let args = a.args && typeof a.args === "object" ? a.args : null;
+          if (!args) { const { tool, ...resto } = a; args = resto; }
+          actions.push({ tool: a.tool, args });
+        }
         return true;
       } catch (_) { return false; }
     };
@@ -411,36 +417,53 @@
 
     // 1) A mensagem saiu? Qualquer sinal basta. NÃO olhamos "a caixa atual": na interface nova a caixa da tela
     //    inicial continua com o texto depois do envio. Usamos a caixa em que digitamos (ed), o endereço e a rede.
-    const sent = () => net.inicios > st.iniciosBefore || net.fins > st.finsBefore ||
-      !ed.isConnected || clean(ed.textContent).length < Math.min(typed, 20) ||
-      location.href !== st.urlBefore ||
-      queries().length > st.queriesBefore || (queries().at(-1) || null) !== st.lastQueryBefore ||
-      !!stopButton() || started(st);
+    // Devolve o nome do primeiro sinal de envio encontrado (ou "" se nenhum).
+    const sinalEnvio = () =>
+      net.inicios > st.iniciosBefore || net.fins > st.finsBefore ? "rede" :
+      !ed.isConnected ? "caixa-removida" :
+      clean(ed.textContent).length < Math.min(typed, 20) ? "caixa-vazia" :
+      location.href !== st.urlBefore ? "endereco" :
+      queries().length > st.queriesBefore || (queries().at(-1) || null) !== st.lastQueryBefore ? "pergunta-na-tela" :
+      stopButton() ? "botao-parar" :
+      started(st) ? "resposta-na-tela" : "";
+    const sent = () => !!sinalEnvio();
+    st.sinalEnvio = sinalEnvio;
+    Object.assign(st, { sent, ed, btn, typed });
     let t = Date.now();
-    // Espera até 15 s antes de concluir que não saiu (evita reenviar e criar conversas duplicadas).
-    while (!sent() && Date.now() - t < 15000) await sleep(300);
+    // Com a aba OCULTA, o Gemini da conta logada deixa o envio na fila até a aba ficar visível (confirmado pelo
+    // usuário: a mensagem saía quando ele abria a aba). Sem sinal em 4 s, pedimos à barra lateral para mostrar a
+    // aba — sem reenviar nada, para não duplicar a mensagem quando a fila andar.
+    const espera = document.hidden ? 4000 : 15000;
+    while (!sent() && Date.now() - t < espera) await sleep(300);
     if (!sent()) {
-      // Só reenvia se NADA indicar envio: nenhuma requisição, mesmo endereço e texto ainda na caixa.
+      if (document.hidden) {
+        st.aguardandoEnvio = true;
+        pendente = st;
+        return { precisaVisivel: true, enviada: false };
+      }
+      // Aba visível e nada saiu: uma nova tentativa com Enter.
       ed.focus();
       const kev = type => new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true });
       ed.dispatchEvent(kev("keydown")); ed.dispatchEvent(kev("keypress")); ed.dispatchEvent(kev("keyup"));
       t = Date.now();
       while (!sent() && Date.now() - t < 8000) await sleep(300);
-      if (!sent()) {
-        const d = sendDiagnostics(btn);
-        return {
-          erro: `A mensagem não foi enviada ao Gemini (nenhuma requisição saiu; o texto continua na caixa: ${clean(ed.textContent).length} de ${typed} caracteres). ` +
-            `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}${d.botaoVisivel ? "" : " (invisível)"}${d.botaoNaAreaDaCaixa ? "" : " (fora da área da caixa)"}; ` +
-            `caixas: ${d.caixas}; botões de enviar: ${d.botoesEnviar}.` +
-            (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
-            (d.dialogo ? ` Janela aberta: ${d.dialogo}` : ""),
-          diagnostico: d,
-          naoEnviada: true
-        };
-      }
+      if (!sent()) return notSentError(st);
     }
     pendente = st;
     return waitAndRead(st);
+  }
+
+  function notSentError(st) {
+    const d = sendDiagnostics(st.btn);
+    return {
+      erro: `A mensagem não foi enviada ao Gemini (nenhum sinal de envio; o texto continua na caixa: ${clean(st.ed.textContent).length} de ${st.typed} caracteres; aba oculta: ${document.hidden ? "sim" : "não"}). ` +
+        `Botão de enviar: "${d.botao}"${d.desabilitado ? " (desabilitado)" : ""}${d.botaoVisivel ? "" : " (invisível)"}${d.botaoNaAreaDaCaixa ? "" : " (fora da área da caixa)"}; ` +
+        `caixas: ${d.caixas}; botões de enviar: ${d.botoesEnviar}.` +
+        (d.avisos.length ? ` Aviso na tela do Gemini: ${d.avisos.join(" | ")}` : " Nenhum aviso visível perto da caixa.") +
+        (d.dialogo ? ` Janela aberta: ${d.dialogo}` : ""),
+      diagnostico: d,
+      naoEnviada: true
+    };
   }
 
   // Resposta nova na tela: mais blocos, ou o último bloco é outro (lista virtualizada em conversas longas).
@@ -458,10 +481,10 @@
     while (!started(st)) {
       if (stopRequested) return { erro: "Interrompido." };
       if (stopButton()) sawStop = true;
-      if (redeQuieta() && document.hidden) return { precisaVisivel: true, enviada: true };
+      if (redeQuieta() && document.hidden) return { precisaVisivel: true, enviada: true, sinal: st.sinalEnvio ? st.sinalEnvio() : "" };
       const limite = sawStop || net.inicios > st.iniciosBefore ? 300000 : 90000;
       if (Date.now() - start > limite) {
-        if (document.hidden && (net.inicios > st.iniciosBefore || net.fins > st.finsBefore)) return { precisaVisivel: true, enviada: true };
+        if (document.hidden && (net.inicios > st.iniciosBefore || net.fins > st.finsBefore)) return { precisaVisivel: true, enviada: true, sinal: st.sinalEnvio ? st.sinalEnvio() : "" };
         return { erro: `O Gemini não começou a responder em ${Math.round(limite / 1000)} s ` +
           `(mensagem enviada: sim; gerando: ${stopButton() ? "sim" : "não"}; respostas na tela: ${st.before} → ${responses().length}; ` +
           `requisições: ${net.inicios - st.iniciosBefore} iniciadas / ${net.fins - st.finsBefore} concluídas; aba oculta: ${document.hidden ? "sim" : "não"}).` };
@@ -477,7 +500,7 @@
       const t = r?.textContent || "";
       if (t !== lastText) { lastText = t; stableSince = Date.now(); continue; }
       if ((!stopButton() || redeQuieta()) && Date.now() - stableSince > 1200 && t.trim()) break;
-      if (redeQuieta() && !t.trim() && document.hidden && Date.now() - stableSince > 4000) return { precisaVisivel: true, enviada: true };
+      if (redeQuieta() && !t.trim() && document.hidden && Date.now() - stableSince > 4000) return { precisaVisivel: true, enviada: true, sinal: st.sinalEnvio ? st.sinalEnvio() : "" };
     }
     const r = responses().at(-1);
     const md = r.querySelector("message-content .markdown, message-content") || r;
@@ -493,7 +516,22 @@
       const md = r.querySelector("message-content .markdown, message-content") || r;
       return { texto: toText(md), acoes: extractActions(md) };
     }
-    return waitAndRead(pendente);
+    const st = pendente;
+    if (st.aguardandoEnvio) {
+      // A aba acabou de ficar visível: o envio que estava na fila normalmente sai sozinho agora.
+      let t = Date.now();
+      while (!st.sent() && Date.now() - t < 10000) await sleep(300);
+      if (!st.sent()) {
+        // Não saiu: um clique no botão de enviar, agora com a aba visível.
+        const b = sendButton();
+        if (b && !b.disabled && b.getAttribute("aria-disabled") !== "true") realClick(b);
+        t = Date.now();
+        while (!st.sent() && Date.now() - t < 8000) await sleep(300);
+      }
+      if (!st.sent()) { pendente = null; return notSentError(st); }
+      st.aguardandoEnvio = false;
+    }
+    return waitAndRead(st);
   }
 
   browser.runtime.onMessage.addListener(msg => {

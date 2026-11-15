@@ -11,6 +11,20 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.13 (Gemini da conta só envia com a aba visível)
+
+- **Erro relatado (1.0.12)**: "não foi enviada (nenhuma requisição saiu…)", mas o print da aba do Gemini mostrava a mensagem enviada e respondida (`{"tool": "click", "ref": 5}`, sem `args`).
+- **Causa**: com a conta logada, o Gemini **deixa o envio na fila enquanto a aba está oculta** e só envia quando ela fica visível — ao abrir a aba para tirar o print, a fila andava. Por isso nenhum sinal (rede, caixa, endereço, tela) aparecia com a aba fixada em 2º plano. Sem login isso não acontece (todos os testes headless passavam).
+- **Correção**:
+  - Ponte: com a aba oculta e nenhum sinal de envio em 4 s, devolve `{ precisaVisivel: true, enviada: false }` **sem reenviar** (reenviar duplicaria a mensagem quando a fila andasse). O `collect`, chamado com a aba visível, espera a fila sair (10 s); se não sair, clica uma vez no enviar; depois lê a resposta. Erro de não envio centralizado em `notSentError`, com "aba oculta: sim/não".
+  - Barra lateral: `withGeminiVisible(fn)` ativa a aba do Gemini, executa e volta para a aba do usuário; `collectVisible` usa ela. Depois da primeira vez em que o envio ficou na fila, `geminiPrecisaVisivel = true` e os próximos envios já são feitos com a aba do Gemini à frente (sem os 4 s de espera). Efeito visível: a aba do Gemini aparece durante a geração e a extensão volta para a página em seguida.
+  - Ações no formato "achatado" (`{"tool":"click","ref":5}`) agora são aceitas: os campos fora de `tool` viram `args`.
+  - Diagnóstico: `sinalEnvio()` informa qual sinal detectou o envio (rede, caixa-removida, caixa-vazia, endereço, pergunta-na-tela, botão-parar, resposta-na-tela), devolvido em `sinal`.
+- **Testes**:
+  - Determinístico (`gemini-falso.html` + ponte real, Firefox headless/BiDi): aba oculta → `precisaVisivel, enviada=false` em 5 s e **nada enviado**; aba visível → `collect` leu a resposta, ação achatada convertida (`args: {ref: 5}`); 1 pergunta e 1 resposta na página (sem duplicata).
+  - Gemini real com a extensão instalada (en e pt-BR): OK (10–12 s). Tentativas de simular a fila no Gemini real (segurar eventos do botão, botão falso) não funcionaram — o Gemini sem login envia por outro caminho —, por isso o teste determinístico.
+- **Pendente**: confirmar no Firefox do usuário.
+
 ### 14/11/2026 — versão 1.0.12 (causa real do "não enviada": a verificação errava)
 
 - **Prova** (print da aba do Gemini da conta Pro, interface nova em inglês): a mensagem de instruções FOI enviada e o Gemini respondeu `{"tool":"click","args":{"ref":5}}`; o histórico tinha ~15 conversas "Busca de Vagas…", uma por tentativa. O envio sempre funcionou — a extensão concluía "não enviada" e desistia (e o reenvio por Enter/clique e o reenvio reduzido da 1.0.10 podem ter gerado conversas duplicadas).
