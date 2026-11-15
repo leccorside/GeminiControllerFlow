@@ -11,6 +11,14 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.19 (resposta vazia com modelo que pensa; sem notificações do Gemini)
+
+- **Bug relatado**: com Gemini 3.1 Pro, pedido de página no Elementor parou após "Elementor: verificando o editor" com "(o Gemini não respondeu nada)", e chegou uma **notificação do sistema** do Gemini com o bloco `{"tool": "elementor", "args": {"acao": "info"}}`.
+- **Causa**: `waitAndRead` considerava a resposta pronta quando o `textContent` do `model-response` ficava parado 1,2 s sem botão de parar. Nos modelos que pensam, o bloco "Mostrar raciocínio" fica parado na tela antes do texto (e o botão de parar não foi reconhecido no quadro), então a leitura saía vazia; a resposta de verdade chegou depois e virou só notificação (o quadro escondido conta como "fora de vista").
+- **Correção** (`content/gemini-bridge.js`): a espera mede só o conteúdo (`message-content`), ignora `model-thoughts` no texto, **nunca encerra com conteúdo vazio**, exige 3 s de texto parado (0,8 s se a barra de ações da resposta já apareceu), espera até 10 min e devolve erro claro se só houver raciocínio. Regex do botão de parar ampliada.
+- **Notificações**: novo `content/gemini-quiet.js` (document_start, só no quadro com `window.name` `gcf-bridge:`) responde "denied" em `Notification.permission`/`requestPermission`/`permissions.query` e anula `ServiceWorkerRegistration.showNotification`. Testado: aba normal do Gemini continua "default"; com o nome do quadro fica "denied".
+- Teste de ponta a ponta do painel repetido sem regressão (resposta em 12 s, painel só na aba certa, reaparece após navegar). Não deu para reproduzir o Gemini 3.1 Pro (exige a conta do usuário).
+
 ### 15/11/2026 — versão 1.0.18 (painel dentro da página, motor no fundo da extensão)
 
 - **Pedido**: o assistente devia fechar sozinho ao trocar de aba. **Testado**: o Firefox recusa `sidebarAction.close()`/`open()` fora de um clique ("may only be called from a user input handler") — a barra lateral nativa (uma por janela) não pode sumir sozinha. **Decisão do usuário** (pergunta com opções): trocar por **painel dentro da página, empurrando o conteúdo**.

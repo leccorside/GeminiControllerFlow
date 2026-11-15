@@ -44,7 +44,7 @@
     el.dispatchEvent(new MouseEvent("mouseup", o));
     el.click();
   }
-  const stopButton = () => buttons().find(b => /parar resposta|stop response|parar de gerar|stop generating/.test(labelOf(b)));
+  const stopButton = () => buttons().find(b => /parar resposta|parar a resposta|stop response|parar de gerar|stop generating|detener respuesta/.test(labelOf(b)));
   const responses = () => [...document.querySelectorAll("model-response")];
 
   function isLoggedIn() {
@@ -79,7 +79,7 @@
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const el = node;
       const tag = el.tagName.toLowerCase();
-      if (["button", "mat-icon", "script", "style", "sources-carousel-inline", "source-footnote"].includes(tag)) return;
+      if (["button", "mat-icon", "script", "style", "sources-carousel-inline", "source-footnote", "model-thoughts"].includes(tag)) return;
       if (el.classList.contains("code-block-decoration") || el.classList.contains("cdk-visually-hidden")) return;
       if (tag === "code-block" || tag === "pre") {
         const code = el.querySelector("code");
@@ -582,22 +582,43 @@
       }
       await sleep(400);
     }
-    // Espera terminar: sem botão de parar e texto estável (ou a rede já concluiu e o texto parou de mudar).
+    // Espera terminar. Conta só o CONTEÚDO da resposta (message-content), não o bloco de raciocínio: nos modelos que
+    // "pensam" (ex.: Gemini 3.1 Pro), o bloco "Mostrar raciocínio" fica parado na tela por muito tempo antes do texto
+    // e era lido como resposta pronta e vazia ("o Gemini não respondeu nada"). Conteúdo vazio nunca encerra a espera.
     let lastText = "", stableSince = Date.now();
-    while (Date.now() - start < 300000) {
-      if (stopRequested) { stopButton()?.click(); break; }
+    let terminou = false;
+    while (Date.now() - start < 600000) {
+      if (stopRequested) { stopButton()?.click(); terminou = true; break; }
       await sleep(500);
       const r = responses().at(-1);
-      const t = r?.textContent || "";
+      const t = conteudo(r);
       if (t !== lastText) { lastText = t; stableSince = Date.now(); continue; }
-      if ((!stopButton() || redeQuieta()) && Date.now() - stableSince > 1200 && t.trim()) break;
-      if (redeQuieta() && !t.trim() && document.hidden && Date.now() - stableSince > 4000) return { precisaVisivel: true, enviada: true, sinal: st.sinalEnvio ? st.sinalEnvio() : "" };
+      const parado = Date.now() - stableSince;
+      const gerando = !!stopButton() && !redeQuieta();
+      // Pronto: há conteúdo, nada gerando e o texto parado (a barra de ações da resposta confirma mais cedo).
+      if (t.trim() && !gerando && (respostaCompleta(r) ? parado > 800 : parado > 3000)) { terminou = true; break; }
+      if (redeQuieta() && !t.trim() && document.hidden && parado > 8000 && !respostaCompleta(r)) return { precisaVisivel: true, enviada: true, sinal: st.sinalEnvio ? st.sinalEnvio() : "" };
     }
     const r = responses().at(-1);
-    const md = r.querySelector("message-content .markdown, message-content") || r;
+    const md = r.querySelector("message-content .markdown") || r.querySelector("message-content") || r;
     pendente = null;
-    return { texto: toText(md), acoes: extractActions(md), imagem_anexada: st.imageAttached, requisicoes: net.fins - st.finsBefore,
+    const texto = toText(md);
+    if (!terminou && !texto.trim()) return { erro: "O Gemini ficou 10 min sem entregar o texto da resposta (só raciocínio ou nada na tela)." };
+    return { texto, acoes: extractActions(md), imagem_anexada: st.imageAttached, requisicoes: net.fins - st.finsBefore,
       avisoAnexos: st.avisoAnexos || "" };
+  }
+
+  // Texto do conteúdo da resposta (sem o bloco de raciocínio e sem botões).
+  function conteudo(r) {
+    if (!r) return "";
+    const md = r.querySelector("message-content .markdown") || r.querySelector("message-content");
+    return md ? toText(md) : "";
+  }
+  // A barra de ações (copiar, curtir, compartilhar) só aparece quando a resposta termina.
+  function respostaCompleta(r) {
+    if (!r) return false;
+    const box = r.closest(".conversation-container, response-container") || r.parentElement || r;
+    return !!box.querySelector("message-actions, .response-footer.complete, [data-test-id=response-footer] button");
   }
 
   // Lê a resposta do último envio sem reenviar (usado depois de mostrar a aba do Gemini).
