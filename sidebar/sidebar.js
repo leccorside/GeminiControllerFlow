@@ -1,6 +1,8 @@
 // Barra lateral: chat + loop de agente controlando a aba.
 // Dois motores: "web" (gemini.google.com logado na conta Google do usuário) e "api" (chave do AI Studio).
 const $ = id => document.getElementById(id);
+// Modo motor: esta página roda escondida no fundo da extensão e atende os painéis das páginas (ver background.js).
+const HOST = new URLSearchParams(location.search).has("host");
 
 const GEMINI_URL = "https://gemini.google.com/app";
 const DEFAULTS = { lang: "", engine: "web", apiKey: "", model: "gemini-2.5-flash", apiLevel: "", webModel: "", webLevel: "", confirmMode: "js", maxSteps: 40, skillsOff: [] };
@@ -120,6 +122,7 @@ function applyStatus(st) {
   if (JSON.stringify(conta) !== JSON.stringify(lastAccount)) {
     lastAccount = conta;
     updateBadge();
+    broadcastState();
   }
   return st;
 }
@@ -257,6 +260,7 @@ function askConfirm(label, name, args) {
     const row = document.createElement("div"); row.className = "row";
     const mk = (txt, cls, val) => {
       const b = document.createElement("button"); b.className = cls; b.textContent = txt;
+      b.dataset.gcfId = "c" + (++gcfIdSeq);
       b.onclick = () => { box.remove(); resolve(val); };
       return b;
     };
@@ -269,6 +273,7 @@ function askConfirm(label, name, args) {
 
 function setBusy(v) {
   busy = v;
+  setTimeout(broadcastState, 0);
   $("btnSend").hidden = v;
   $("btnStop").hidden = !v;
   $("modelPicker").disabled = v;
@@ -787,6 +792,7 @@ async function runAgent(userText, files = []) {
   try {
     runner.tabId = sessao.tabId;
     const tab = await browser.tabs.get(sessao.tabId).catch(() => null);
+    if (tab) { runner.windowId = tab.windowId; windowId = tab.windowId; }
     const ctx = tab ? `\n\n[Aba atual: "${tab.title}" — ${tab.url}]` : "";
     runner.anexos = files;
     if (settings.engine === "api") {
@@ -1090,7 +1096,7 @@ mainChat.addEventListener("click", e => {
   if (chip && !busy) runAgent(chip.dataset.prompt);
 });
 
-browser.tabs.onActivated.addListener(info => { if (info.windowId === windowId) showSessionFor(info.tabId); });
+browser.tabs.onActivated.addListener(info => { if (!HOST && info.windowId === windowId) showSessionFor(info.tabId); });
 browser.tabs.onUpdated.addListener((id, change, tab) => {
   if (tab.windowId === windowId && (change.title || change.url)) updateTabContext();
   // O usuário fez login (ou trocou de conta) no gemini.google.com numa aba: recarrega o Gemini do quadro para
@@ -1107,8 +1113,150 @@ browser.tabs.onRemoved.addListener(id => {
   if (busy && sess === boundSession) abort?.abort();
   sess.view.remove();
   sessions.delete(id);
+  if (typeof viewObservers !== "undefined" && viewObservers.has(id)) { viewObservers.get(id).disconnect(); viewObservers.delete(id); }
   if (viewSession === sess) viewSession = null;
 });
+
+// ---------- Modo motor (?host=1): atende os painéis das páginas ----------
+// Esta mesma página roda escondida no fundo da extensão. Cada painel (panel/panel.html, dentro de uma aba) se
+// conecta por runtime.connect("gcf-panel"); o motor valida o token, cria a sessão da aba, espelha a conversa dela
+// para o painel (HTML da visão da sessão) e executa os comandos do painel.
+const panelPorts = new Map(); // tabId -> Set(port)
+const viewObservers = new Map(); // tabId -> MutationObserver
+let gcfIdSeq = 0;
+
+function postTab(tabId, msg) {
+  for (const p of panelPorts.get(tabId) || []) { try { p.postMessage(msg); } catch (_) { /* painel fechado */ } }
+}
+
+function hostState() {
+  const nome = settings.engine === "web" ? (webModelCurrent || settings.webModel || t("modelDefault")) : settings.model;
+  const nivel = settings.engine === "web" ? (webLevelCurrent || settings.webLevel || "") : (settings.apiLevel ? apiLevelName(settings.apiLevel) : "");
+  return { t: "state", engine: settings.engine, account: lastAccount, modelName: nome, modelLevel: nivel,
+    busyTab: busy && boundSession ? boundSession.tabId : null };
+}
+
+function broadcastState() {
+  if (!HOST) return;
+  const st = hostState();
+  for (const tabId of panelPorts.keys()) postTab(tabId, { ...st, aqui: st.busyTab === tabId });
+}
+
+function mirror(sess) {
+  postTab(sess.tabId, { t: "html", html: sess.view.innerHTML });
+}
+
+function observeSession(sess) {
+  if (viewObservers.has(sess.tabId)) return;
+  let timer = null;
+  const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => mirror(sess), 60); });
+  obs.observe(sess.view, { childList: true, subtree: true, characterData: true, attributes: true });
+  viewObservers.set(sess.tabId, obs);
+}
+
+async function hostRpc(fn, args = {}) {
+  switch (fn) {
+    case "listModels": {
+      if (settings.engine === "web") {
+        await ensureGemini({});
+        const res = await bridge("list_models");
+        if (!res || res.erro) throw new Error(res ? res.erro : t("geminiTabGone"));
+        if (res.atual) webModelCurrent = res.atual;
+        const sel = (res.modelos || []).find(m => m.selecionado);
+        webLevelCurrent = sel && sel.nivel ? sel.nivel : null;
+        broadcastState();
+        return res.modelos || [];
+      }
+      if (!settings.apiKey) throw new Error(t("modelNeedKey"));
+      if (!apiModelsCache) apiModelsCache = await geminiListModels(settings.apiKey);
+      return apiModelsCache.map(m => {
+        const atual = m.id === settings.model;
+        return { nome: m.id, descricao: m.nome, selecionado: atual,
+          nivel: atual && settings.apiLevel ? apiLevelName(settings.apiLevel) : "", nivelId: atual ? settings.apiLevel : null,
+          niveis: API_LEVELS().map(l => ({ id: l.id, nome: l.nome, selecionado: atual && l.id === (settings.apiLevel || "") })) };
+      });
+    }
+    case "chooseModel": {
+      const sess = sessions.get(args.tabId);
+      if (sess && !busy) bindSession(sess);
+      await chooseModel(args.modelo, args.nivel ?? null);
+      broadcastState();
+      return { ok: true };
+    }
+    case "login": await abrirLogin(); return { ok: true };
+    case "loadApiModels": return geminiListModels(args.key);
+    default: throw new Error("rpc desconhecido: " + fn);
+  }
+}
+
+function onPanelMessage(port, tabId, m) {
+  const sess = sessions.get(tabId);
+  switch (m.type) {
+    case "send": {
+      if (!sess) return;
+      if (busy) {
+        if (boundSession !== sess) postTab(tabId, { t: "toast", text: t("busyOtherTab") });
+        return;
+      }
+      viewSession = sess;
+      runAgent(m.text, m.files || []);
+      return;
+    }
+    case "stop": if (busy && boundSession === sess) stop(); return;
+    case "new": if (sess) { viewSession = sess; newChat(); } return;
+    case "click": {
+      const alvo = sess && sess.view.querySelector(`[data-gcf-id="${CSS.escape(String(m.id))}"]`);
+      if (alvo) alvo.click();
+      return;
+    }
+    case "rpc":
+      hostRpc(m.fn, { ...(m.args || {}), tabId }).then(
+        r => { try { port.postMessage({ t: "rpc", id: m.id, ok: true, result: r }); } catch (_) {} },
+        e => { try { port.postMessage({ t: "rpc", id: m.id, ok: false, erro: e.message || String(e) }); } catch (_) {} });
+      return;
+    default: return;
+  }
+}
+
+if (HOST) {
+  browser.runtime.onConnect.addListener(port => {
+    if (port.name !== "gcf-panel") return;
+    const tabId = port.sender && port.sender.tab && port.sender.tab.id;
+    let validado = false;
+    port.onMessage.addListener(m => {
+      if (!m) return;
+      if (m.type === "hello") {
+        const esperado = window.parent && window.parent.gcfPainelToken ? window.parent.gcfPainelToken(tabId) : null;
+        if (tabId == null || !esperado || m.token !== esperado) { try { port.disconnect(); } catch (_) {} return; }
+        validado = true;
+        if (!panelPorts.has(tabId)) panelPorts.set(tabId, new Set());
+        panelPorts.get(tabId).add(port);
+        const sess = sessions.get(tabId) || newSession(tabId);
+        observeSession(sess);
+        mirror(sess);
+        const st = hostState();
+        port.postMessage({ ...st, aqui: st.busyTab === tabId });
+        return;
+      }
+      if (validado) onPanelMessage(port, tabId, m);
+    });
+    port.onDisconnect.addListener(() => {
+      const set = panelPorts.get(tabId);
+      if (set) { set.delete(port); if (!set.size) panelPorts.delete(tabId); }
+    });
+  });
+  // Configurações salvas pelo painel: o motor recarrega (idioma, motor, modelo, confirmação…).
+  browser.storage.onChanged.addListener((mudou, area) => {
+    if (area !== "local") return;
+    const antes = { lang: settings.lang, engine: settings.engine };
+    loadSettings().then(() => {
+      if (antes.lang !== settings.lang) retranslate();
+      if (antes.engine !== settings.engine) for (const s of sessions.values()) { viewSession = s; newChat(); }
+      apiModelsCache = null;
+      broadcastState();
+    });
+  });
+}
 
 (async () => {
   windowId = (await browser.windows.getCurrent()).id;
@@ -1117,10 +1265,13 @@ browser.tabs.onRemoved.addListener(id => {
   updateModelPicker();
   renderGate();
   $("tabGate").querySelector("button").addEventListener("click", openHere);
-  const [ativa] = await browser.tabs.query({ active: true, windowId });
-  if (ativa) { newSession(ativa.id); showSessionFor(ativa.id); }
+  if (!HOST) {
+    const [ativa] = await browser.tabs.query({ active: true, windowId });
+    if (ativa) { newSession(ativa.id); showSessionFor(ativa.id); }
+  }
   if (settings.engine === "web") createGeminiFrame();
   refreshAccount();
   setInterval(() => { if (!busy) refreshAccount(); }, 15000);
-  $("input").focus();
+  if (!HOST) $("input").focus();
+  broadcastState();
 })();

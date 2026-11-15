@@ -11,6 +11,21 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 
 ## Histórico de implementações
 
+### 15/11/2026 — versão 1.0.18 (painel dentro da página, motor no fundo da extensão)
+
+- **Pedido**: o assistente devia fechar sozinho ao trocar de aba. **Testado**: o Firefox recusa `sidebarAction.close()`/`open()` fora de um clique ("may only be called from a user input handler") — a barra lateral nativa (uma por janela) não pode sumir sozinha. **Decisão do usuário** (pergunta com opções): trocar por **painel dentro da página, empurrando o conteúdo**.
+- **Experimentos que guiaram a arquitetura** (Firefox headless, extensões de teste):
+  - Gemini num iframe aninhado ao painel dentro de um site (example.com e github.com, este com CSP rígida): o painel é aceito e o Gemini responde, **mas os cookies chegam vazios** (isolados pelo site) → sem a conta do usuário. Descartado como lugar do Gemini.
+  - Gemini num iframe da **página de fundo** da extensão: `hidden: false`, **cookies do usuário presentes**, ponte respondeu "OK" em 5 s → o Gemini fica no fundo.
+- **Arquitetura**:
+  - `background.js`: cria o **motor** (`sidebar/sidebar.html?host=1` num iframe escondido; dentro dele o iframe do Gemini, como antes) e controla o painel por aba (`painelAberto: tabId → token`). Ícone/Ctrl+Shift+Y (`_execute_browser_action`) abre/fecha o painel na aba atual; em páginas que não aceitam content script mostra "!" no ícone. `gcfPainelToken(tabId)` é lido pelo motor.
+  - `content/panel-host.js` (todas as páginas, quadro de topo): injeta `panel/panel.html#token` como iframe fixo à direita (420 px) e aplica `html { margin-right: 420px }` (empurra o conteúdo). Ao carregar a página pergunta ao fundo se o painel estava aberto → reaparece após navegação.
+  - `panel/` (interface): conecta ao motor por `runtime.connect("gcf-panel")` com o token (o motor recusa token errado — um site não consegue embutir o painel para induzir cliques); recebe o HTML da conversa da sessão (espelho via `MutationObserver`), estado (conta, modelo, ocupado/aqui) e avisos; envia send/stop/new, cliques em botões do motor (`data-gcf-id`, ex.: Permitir/Recusar) e RPC (listModels, chooseModel, login, loadApiModels). Configurações salvas no storage; o motor recarrega via `storage.onChanged`. Reconecta sozinho se o motor ainda estiver carregando.
+  - `sidebar/sidebar.js` em modo motor (`HOST`): sessões nascem quando um painel abre; não troca visão por aba ativa; a tarefa usa a aba e a janela da sessão.
+  - Manifest: sem `sidebar_action`; `web_accessible_resources: panel/panel.html`; `panel-host.js` em `<all_urls>`. Sem permissões novas (atualização silenciosa).
+- **Teste de ponta a ponta** (extensão real, Firefox headless, `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`): painel aberto em example.com (margem 420 px, painel 421 px), conectado; pedido "título desta página" → leitura da página + resposta "Example Domain" em 30 s (numa rodada o Gemini pediu JavaScript e o "Permitir" clicado **no painel** foi repassado ao motor); example.org **sem painel**; nenhuma aba/janela do Gemini; ao navegar a aba para example.net o painel **reapareceu com as 4 mensagens**.
+- Limitações: elementos fixos de alguns sites podem ficar por baixo do painel (o empurrão é por margem do `html`); páginas internas do Firefox não aceitam o painel; o print (`screenshot`) inclui o painel.
+
 ### 15/11/2026 — versão 1.0.17 (Gemini dentro da barra lateral, assistente por aba, Elementor, 20 anexos, fidelidade)
 
 - **Gemini sem aba nem janela** (pedido: "deve centralizar apenas no agente da extensão"): o gemini.google.com roda num **iframe escondido dentro da barra lateral** (`.gemini-frame`: fixo, tamanho da barra, `opacity: 0.01`, `z-index: -1`, sem eventos — renderizado de propósito para contar como página visível; `display:none`/opacity 0 poderiam ser tratados como invisíveis).

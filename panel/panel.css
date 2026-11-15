@@ -1,0 +1,8 @@
+/* Painel dentro da página: ocupa o iframe inteiro (420 px de largura, altura da janela). */
+html, body { height: 100%; }
+body { overflow: hidden; }
+.chat { min-height: 0; }
+.toast {
+  margin: 0 2px 6px; padding: 6px 10px; border-radius: 8px; font-size: 12px;
+  color: var(--text); background: color-mix(in srgb, var(--accent) 14%, var(--bg-soft));
+}

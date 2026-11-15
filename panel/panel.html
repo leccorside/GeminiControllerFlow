@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gemini</title>
+  <link rel="stylesheet" href="../sidebar/sidebar.css">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <!-- Painel do assistente DENTRO da página (só nesta aba). A conversa e o Gemini rodam no fundo da extensão;
+       este painel só mostra a conversa e envia os comandos. -->
+  <header class="top">
+    <div class="brand">
+      <img src="../icons/icon.svg" alt="" width="18" height="18">
+      <span>Gemini</span>
+      <span id="modelBadge" class="badge"></span>
+    </div>
+    <div class="top-actions">
+      <button id="btnNew" class="icon-btn" data-i18n-title="newChat" title="Nova conversa" aria-label="Nova conversa">
+        <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btnSettings" class="icon-btn" data-i18n-title="settings" title="Configurações" aria-label="Configurações">
+        <svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+      </button>
+      <button id="btnClose" class="icon-btn" data-i18n-title="close" title="Fechar" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" width="17" height="17"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section id="settings" class="settings" hidden>
+    <h2 data-i18n="settings">Configurações</h2>
+    <label class="field">
+      <span data-i18n="language">Idioma</span>
+      <select id="lang">
+        <option value="pt-BR">Português (Brasil)</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </label>
+    <label class="field">
+      <span data-i18n="engineLabel">Como usar o Gemini</span>
+      <select id="engine">
+        <option value="web" data-i18n="engineWeb">Minha conta Google (gemini.google.com)</option>
+        <option value="api" data-i18n="engineApi">Chave da API (Google AI Studio)</option>
+      </select>
+      <small id="engineHelp"></small>
+    </label>
+    <div id="webFields" class="field">
+      <button id="btnOpenGemini" class="btn-secondary" type="button" data-i18n="openGemini">Abrir o Gemini para fazer login</button>
+    </div>
+    <div id="apiFields">
+    <label class="field">
+      <span data-i18n="apiKey">Chave da API do Gemini</span>
+      <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+      <small><span data-i18n="apiKeyHelpBefore">Crie em</span> <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a><span data-i18n="apiKeyHelpAfter">. Fica salva só neste Firefox.</span></small>
+    </label>
+    <label class="field">
+      <span data-i18n="model">Modelo</span>
+      <div class="row">
+        <input id="model" list="modelList" spellcheck="false" placeholder="gemini-2.5-flash">
+        <button id="btnLoadModels" class="btn-secondary" type="button" data-i18n="loadModels">Carregar</button>
+      </div>
+      <datalist id="modelList"></datalist>
+      <small id="modelsStatus"></small>
+    </label>
+    </div>
+    <label class="field">
+      <span data-i18n="confirmLabel">Pedir confirmação antes de agir</span>
+      <select id="confirmMode">
+        <option value="js" data-i18n="confirmJs">Só para JavaScript</option>
+        <option value="all" data-i18n="confirmAll">Para toda ação (clicar, digitar, navegar…)</option>
+        <option value="never" data-i18n="confirmNever">Nunca</option>
+      </select>
+    </label>
+    <label class="field">
+      <span data-i18n="maxSteps">Máximo de passos por pedido</span>
+      <input id="maxSteps" type="number" min="5" max="200" step="5">
+    </label>
+    <div class="field">
+      <span data-i18n="skillsTitle">Habilidades</span>
+      <div id="skillsList" class="skills-list"></div>
+    </div>
+    <div class="row end">
+      <button id="btnCloseSettings" class="btn-secondary" type="button" data-i18n="close">Fechar</button>
+      <button id="btnSaveSettings" class="btn-primary" type="button" data-i18n="save">Salvar</button>
+    </div>
+  </section>
+
+  <main id="chat" class="chat" aria-live="polite"><div class="session-view" id="view"></div></main>
+
+  <footer class="composer" id="composer">
+    <div id="toast" class="toast" hidden></div>
+    <div id="attachList" class="attach-list" hidden></div>
+    <div class="input-wrap" id="inputWrap">
+      <button id="btnAttach" class="attach-btn" type="button" data-i18n-title="attachTitle" title="Anexar imagens ou arquivos" aria-label="Anexar imagens ou arquivos">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <input id="fileInput" type="file" multiple hidden>
+      <textarea id="input" rows="1" data-i18n-placeholder="inputPlaceholder" placeholder="Peça algo para fazer nesta página…"></textarea>
+      <button id="btnSend" class="send" data-i18n-title="send" title="Enviar (Enter)" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="btnStop" class="send stop" data-i18n-title="stop" title="Parar" aria-label="Parar" hidden>
+        <svg viewBox="0 0 24 24" width="14" height="14"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="composer-bar">
+      <div class="model-wrap">
+        <div id="modelMenu" class="model-menu" role="listbox" hidden>
+          <div class="model-menu-title" data-i18n="modelMenuTitle">Modelo</div>
+          <div id="modelList2" class="model-items"></div>
+        </div>
+        <button id="modelPicker" class="model-picker" type="button" aria-haspopup="listbox" data-i18n-title="modelPickerTitle" title="Escolher o modelo">
+          <span id="modelPickerLabel">Gemini</span>
+          <span id="modelPickerLevel" class="picker-level" hidden></span>
+          <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../sidebar/i18n.js"></script>
+  <script src="../sidebar/skills.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

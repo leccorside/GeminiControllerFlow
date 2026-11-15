@@ -1,19 +1,19 @@
 # GeminiControllerFlow — extensão para Firefox
 
-Abre o Gemini na barra lateral do Firefox como assistente, com acesso à página aberta e capacidade de agir nela: ler, clicar, digitar, escolher opções, rolar, passar o mouse, pressionar teclas, navegar, trocar/abrir abas, capturar a tela e executar JavaScript.
+Abre o Gemini como assistente num painel à direita da página (só na aba em que você o abre), com acesso à página aberta e capacidade de agir nela: ler, clicar, digitar, escolher opções, rolar, passar o mouse, pressionar teclas, navegar, trocar/abrir abas, capturar a tela e executar JavaScript.
 
 ## Dois modos de uso
 
 | Modo | Como funciona | Precisa de |
 |---|---|---|
-| **Minha conta Google** (padrão) | O `gemini.google.com` (logado na sua conta) roda **escondido dentro da própria barra lateral** — sem abrir aba nem janela. A extensão digita suas mensagens nele, espera a resposta, executa as ações pedidas na sua página e devolve o resultado. A conversa também fica no histórico do Gemini. | Só estar logado no gemini.google.com |
+| **Minha conta Google** (padrão) | O `gemini.google.com` (logado na sua conta) roda **escondido no fundo da extensão** — sem abrir aba nem janela. A extensão digita suas mensagens nele, espera a resposta, executa as ações pedidas na sua página e devolve o resultado. A conversa também fica no histórico do Gemini. | Só estar logado no gemini.google.com |
 | **Chave da API** | Chama a API oficial do Gemini com *function calling*. Mais rápido e estável. | Chave do [Google AI Studio](https://aistudio.google.com/apikey) |
 
 ## Instalar (modo desenvolvedor)
 
 1. Abra `about:debugging#/runtime/this-firefox`.
 2. Clique em **Carregar extensão temporária…** e escolha o arquivo `manifest.json` desta pasta.
-3. A barra lateral do Gemini abre sozinha. Também dá para abrir pelo ícone na barra de ferramentas ou com **Ctrl+Shift+Y**.
+3. Clique no ícone da extensão na barra de ferramentas (ou **Ctrl+Shift+Y**): o painel do assistente abre à direita da página atual, empurrando o conteúdo. Clique de novo (ou no X do painel) para fechar.
 
 A instalação temporária some ao fechar o Firefox.
 
@@ -47,15 +47,15 @@ Alternativa sem assinatura: **Firefox Developer Edition / Nightly**, com `xpinst
 ## Primeiro uso (modo conta Google)
 
 1. Clique na engrenagem → **Abrir o Gemini para fazer login** e entre com sua conta Google normalmente (a extensão nunca vê sua senha).
-2. Volte para a página em que quer trabalhar e peça algo na barra lateral, por exemplo:
+2. Volte para a página em que quer trabalhar, abra o painel pelo ícone e peça algo, por exemplo:
    - "Resuma esta página"
    - "Curta a primeira publicação do feed"
    - "Pesquise notebook gamer e ordene pelo menor preço"
-3. Nada de aba ou janela do Gemini: ele roda escondido dentro da barra lateral, que precisa estar aberta enquanto o agente trabalha. O login é feito uma vez numa aba normal (botão "Abrir o Gemini para fazer login"); depois disso o quadro usa a sua conta automaticamente.
+3. Nada de aba ou janela do Gemini: ele roda escondido no fundo da extensão. O login é feito uma vez numa aba normal (botão "Abrir o Gemini para fazer login"); depois disso o assistente usa a sua conta automaticamente.
 
 ### Um assistente por aba
 
-O assistente fica na aba em que você o abriu. Nas outras abas a barra lateral mostra só "Abrir o assistente nesta aba" (conversa limpa); voltando à primeira aba, a conversa dela continua lá. Uma tarefa em andamento segue na aba dela mesmo se você trocar de aba. (O Firefox só deixa abrir/fechar a barra lateral com um clique seu — use o X ou Ctrl+Shift+Y para escondê-la.)
+O painel existe só na aba em que você o abriu: ao trocar de aba ele não aparece; ao voltar, está lá com a conversa. Em outra aba, o ícone abre um painel com conversa limpa. Se a página navegar (inclusive pelo próprio agente), o painel reaparece sozinho com a conversa, e a tarefa em andamento continua (o motor do agente roda no fundo da extensão). Páginas internas do Firefox (about:, addons.mozilla.org, leitor de PDF) não aceitam o painel — o ícone mostra "!".
 
 ## Configurações
 
@@ -102,8 +102,10 @@ Por baixo, usa a ferramenta `wordpress` (API do próprio editor: `wp.data`/`wp.b
 ## Estrutura
 
 ```
-manifest.json            Manifest V2 (sidebar_action, content script da ponte, atalho)
-background.js            Ícone da barra de ferramentas abre/fecha a barra lateral
+manifest.json            Manifest V2 (ícone com atalho, content scripts da ponte e do painel)
+background.js            Motor escondido (sidebar.html?host=1 + Gemini), ícone abre/fecha o painel na aba
+content/panel-host.js    Mostra o painel dentro da página (empurra o conteúdo) e o reabre após navegação
+panel/                   Interface do painel (conversa espelhada do motor, envio, anexos, modelo, configurações)
 content/agent.js         Injetado na página alvo: lê elementos e executa ações
 content/gemini-bridge.js Roda no gemini.google.com: digita, espera a resposta, extrai ações
 sidebar/                 Interface do chat, loop do agente, ferramentas e cliente da API
