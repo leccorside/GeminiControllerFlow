@@ -25,6 +25,7 @@ Extensão Firefox (Manifest V2) que abre o Gemini na barra lateral, lê a págin
 - **Envio sem botão** (`content/gemini-bridge.js`): espera o botão de enviar por até 30 s e, se não aparecer/habilitar, envia com Enter na caixa em vez de devolver erro.
 - **Roteiro Elementor** (`sidebar/skills.js`): inventário obrigatório da referência (seções, fundos, colunas, cards, selos, destaques, qual anexo em cada imagem), montar em partes de até 4 seções, conferir com screenshot/get_structure e refazer o que não bater; exemplo completo no estilo da referência; regra da página publicada.
 - Teste no Playground: 3 seções/10 widgets em ~2 s (sem pausas do cursor), 16 posições de cursor e 13 cliques visuais registrados; print da pré-visualização conferido. Regressão do painel com a extensão real ok (hover com cursor verde; confirmação de JavaScript aguardando o usuário, como esperado).
+- **Assinatura**: a Mozilla bloqueou as assinaturas por algumas horas ("Request was throttled. Expected available in N seconds"); cada tentativa durante o bloqueio pode estender a espera, então foi feita uma única tentativa agendada depois do prazo. Assinada em 15/11/2026 e publicada em `updates/` (`geminicontrollerflow-1.0.21.xpi`; o script removeu a 1.0.16, mantendo as 5 últimas).
 
 ### 15/11/2026 — versão 1.0.20 ("Gemini em Ação" e JSON de ação quebrado)
 
